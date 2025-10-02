@@ -1,67 +1,70 @@
-import sys, os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import streamlit as st
 import pandas as pd
+import os
+import yaml
+
 from data.fetchers.yahoo_fetcher import fetch
-from data.fetchers.index_fetcher import get_omxs30_tickers
 from indicators.rsi import calculate_rsi
+from indicators.bollinger import calculate_bollinger
 from indicators.macd import calculate_macd
-from indicators.bollinger import calculate_bollinger_bands
 
-st.title("OMXS30 Swing Trade Dashboard (DEBUG MODE)")
+# Load config
+config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
+with open(config_path) as f:
+    config = yaml.safe_load(f)
 
-# Step 1: Fetch OMXI30 tickers dynamically
-symbols = get_omxs30_tickers()
-st.write("✅ Fetched symbols:", symbols)
+st.title("📊 OMXS30 Swing Trade Dashboard")
 
-def analyze_stock(symbol):
+tickers = config["omxs30"]["tickers"]
+results = []
+
+st.write("🔍 Fetching and analyzing data... Please wait.")
+
+for ticker in tickers:
     try:
-        df = fetch(symbol, period="6mo", interval="1d")
-        if df is None or df.empty:
-            st.warning(f"⚠️ No data for {symbol}")
-            return None
+        df = fetch(ticker, period="6mo", interval="1d")
+        if df.empty:
+            st.warning(f"No data for {ticker}")
+            continue
 
         df["RSI"] = calculate_rsi(df["Close"])
-        df["MACD"], df["Signal"], df["Hist"] = calculate_macd(df["Close"])
-        df["Upper"], df["Lower"] = calculate_bollinger_bands(df["Close"])
+        df["Upper"], df["Lower"] = calculate_bollinger(df["Close"])
+        macd, signal = calculate_macd(df["Close"])
+        df["MACD"], df["Signal"] = macd, signal
 
-        last = df.iloc[-1]
-        signal, entry, exit = "Neutral", None, None
+        latest = df.iloc[-1]
 
-        if last["RSI"] < 30 and last["Close"] <= last["Lower"]:
-            signal, entry = "Strong Buy", last["Close"]
-        elif last["RSI"] > 70 and last["Close"] >= last["Upper"]:
-            signal, exit = "Sell", last["Close"]
-        elif last["MACD"] > last["Signal"]:
-            signal = "Buy"
-        elif last["MACD"] < last["Signal"]:
-            signal = "Weak Sell"
+        # Signal logic
+        if latest["RSI"] < 30 and latest["Close"] < latest["Lower"]:
+            signal_text = "Strong Buy"
+        elif latest["RSI"] > 70 and latest["Close"] > latest["Upper"]:
+            signal_text = "Strong Sell"
+        else:
+            signal_text = "Neutral"
 
-        return {
-            "Symbol": symbol,
-            "Signal": signal,
-            "Entry Point": entry,
-            "Exit Point": exit,
-            "RSI": round(last["RSI"], 2),
-            "Price": last["Close"]
-        }
+        results.append({
+            "Ticker": ticker,
+            "Close": round(latest["Close"], 2),
+            "RSI": round(latest["RSI"], 2),
+            "Signal": signal_text,
+            "Entry Point": round(latest["Close"] * 0.98, 2),
+            "Exit Point": round(latest["Close"] * 1.05, 2),
+        })
+
     except Exception as e:
-        st.error(f"❌ Error analyzing {symbol}: {e}")
-        return None
+        st.error(f"Error processing {ticker}: {e}")
 
-results = []
-for sym in symbols:
-    st.write(f"🔍 Analyzing {sym}...")
-    res = analyze_stock(sym)
-    if res:
-        results.append(res)
-
-st.write("📊 Raw analysis results:", results)
-
+# ✅ Show top candidates
 if results:
     df = pd.DataFrame(results)
-    st.subheader("Top Swing Trade Candidates (OMXS30)")
-    st.dataframe(df.sort_values(by=["Signal", "RSI"], ascending=[True, True]))
+    st.subheader("Top Swing Trade Candidates (sorted by RSI)")
+    st.dataframe(df.sort_values(by=["RSI"], ascending=True))
 else:
     st.warning("⚠️ No results available. Possibly tickers or data fetching failed.")
+
+# ✅ Always show all analyzed stocks
+st.subheader("All Analyzed Stocks")
+if results:
+    st.dataframe(pd.DataFrame(results))
+else:
+    st.write("No stock data analyzed.")
