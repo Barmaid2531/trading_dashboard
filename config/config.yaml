@@ -1,11 +1,4 @@
-symbols:
-  - AAPL
-  - MSFT
-  - TSLA
-  - NOK.OL
-  - SAS.ST
-  - SHOP.TO
-
+symbols: []
 rules:
   AND:
     - filter: rsi_filter
