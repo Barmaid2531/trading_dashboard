@@ -1,10 +1,13 @@
 import streamlit as st
 from data.fetchers.yahoo_fetcher import fetch
 from screening.filters import apply_screen
+import os
 import yaml
 
-with open("config/config.yaml") as f:
+config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
+with open(config_path) as f:
     config = yaml.safe_load(f)
+
 
 symbols = config.get("symbols", [])
 rules = config.get("rules", {})
