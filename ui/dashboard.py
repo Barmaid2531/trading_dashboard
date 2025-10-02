@@ -1,7 +1,7 @@
-# ui/dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import json
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.moving_average import generate_signals
 
@@ -36,28 +36,57 @@ def plot_stock_chart(strategy_data, ticker_symbol):
 def run_app():
     st.set_page_config(page_title="Trading Dashboard", page_icon="💹", layout="wide")
 
-    with st.sidebar:
-        st.title("💹 Trading Dashboard")
-        st.info("This app analyzes the OMXS30 index using a Moving Average Crossover strategy to identify potential intraday buy signals.")
-        st.write("---")
-        st.write("Strategy: Buy when the short-term (10-period) moving average crosses above the long-term (50-period) one.")
-        st.warning("Disclaimer: This is an educational tool and not financial advice.")
-
-    st.title("OMXS30 Intraday Analysis")
-
+    # --- Initialize session state ---
     if 'portfolio' not in st.session_state:
         st.session_state.portfolio = []
+    if 'watchlist' not in st.session_state:
+        st.session_state.watchlist = []
 
-    tab1, tab2, tab3 = st.tabs(["📈 OMXS30 Screener", "🔍 Individual Stock Analysis", "💼 My Portfolio"])
+    # --- Sidebar ---
+    with st.sidebar:
+        st.title("💹 Trading Dashboard")
+        st.info("An educational tool to analyze stocks using a Moving Average Crossover strategy.")
+        st.write("---")
+        
+        # --- Portfolio Import/Export ---
+        st.header("My Portfolio Data")
+        
+        uploaded_file = st.file_uploader("Import Portfolio", type=['json'])
+        if uploaded_file is not None:
+            try:
+                portfolio_data = json.load(uploaded_file)
+                st.session_state.portfolio = portfolio_data
+                st.success("Portfolio imported successfully!")
+            except Exception as e:
+                st.error(f"Error importing file: {e}")
+
+        if st.session_state.portfolio:
+            portfolio_json = json.dumps(st.session_state.portfolio, indent=4)
+            st.download_button(
+                label="Export Portfolio",
+                data=portfolio_json,
+                file_name="my_portfolio.json",
+                mime="application/json"
+            )
+        
+        st.write("---")
+        st.warning("Disclaimer: Not financial advice. Use at your own risk.")
+
+    # --- Main Page Title ---
+    st.title("Intraday Stock Analysis")
+
+    # --- Tabs for different functionalities ---
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 OMXS30 Screener", "🔍 Individual Analysis", "💼 My Portfolio", "🔭 Watchlist"])
 
     with tab1:
-        st.header("Find Recent Buy Signals")
+        st.header("Find Recent Buy Signals (OMXS30)")
         if st.button("Analyze All OMXS30 Stocks", type="primary"):
             tickers = get_omxs30_tickers()
             buy_recommendations = []
             progress_bar = st.progress(0, text="Starting analysis...")
-            
             for i, ticker in enumerate(tickers):
+                progress_text = f"Analyzing {ticker} ({i+1}/{len(tickers)})..."
+                progress_bar.progress((i + 1) / len(tickers), text=progress_text)
                 try:
                     data = fetch(ticker)
                     if not data.empty:
@@ -86,7 +115,6 @@ def run_app():
         st.header("Deep-Dive on a Single Stock")
         omxs30_tickers = get_omxs30_tickers()
         ticker_to_analyze = st.selectbox("Select from OMXS30 or type any ticker:", options=[""] + omxs30_tickers, help="You can select from the list or start typing a custom ticker like 'GOOGL' or 'TSLA'.")
-
         if ticker_to_analyze:
             try:
                 with st.spinner(f"Fetching and analyzing {ticker_to_analyze}..."):
@@ -113,107 +141,126 @@ def run_app():
 
     with tab3:
         st.header("My Portfolio Tracker")
-
         with st.form("add_holding_form", clear_on_submit=True):
             st.write("Add a new stock to your portfolio")
             col1, col2, col3 = st.columns(3)
             ticker = col1.text_input("Ticker Symbol").upper()
             quantity = col2.number_input("Quantity", min_value=0.01, step=0.01, format="%.2f")
             gav = col3.number_input("Average Cost (GAV)", min_value=0.01, step=0.01, format="%.2f")
-            
             submitted = st.form_submit_button("Add to Portfolio")
             if submitted and ticker and quantity > 0 and gav > 0:
                 st.session_state.portfolio.append({"ticker": ticker, "quantity": quantity, "gav": gav})
                 st.success(f"Added {quantity} shares of {ticker} to your portfolio!")
-
         st.write("---")
-
         if not st.session_state.portfolio:
-            st.info("Your portfolio is empty. Add a stock using the form above.")
+            st.info("Your portfolio is empty. Add a stock or import a portfolio file from the sidebar.")
         else:
-            portfolio_data = []
-            total_value = 0
-            total_investment = 0
-            
+            portfolio_data, total_value, total_investment = [], 0, 0
             with st.spinner("Updating portfolio data..."):
                 for holding in st.session_state.portfolio:
                     try:
                         data = fetch(holding["ticker"])
                         if data.empty: continue
-                        
                         strategy_data = generate_signals(data)
                         current_price = data['Close'].iloc[-1]
                         investment_value = holding["quantity"] * holding["gav"]
                         current_value = holding["quantity"] * current_price
                         profit_loss = current_value - investment_value
                         profit_loss_pct = (profit_loss / investment_value) * 100 if investment_value != 0 else 0
-                        
                         last_signal_val = strategy_data['Signal'].iloc[-1]
                         suggestion = "Hold" if last_signal_val == 1 else "Sell"
-
                         portfolio_data.append({
                             "Ticker": holding["ticker"], "Quantity": holding["quantity"], "GAV": f"{holding['gav']:.2f}",
                             "Current Price": f"{current_price:.2f}", "Current Value": f"{current_value:.2f}",
-                            "P/L": f"{profit_loss:.2f}", "P/L %": f"{profit_loss_pct:.2f}%",
-                            "Suggestion": suggestion
+                            "P/L": f"{profit_loss:.2f}", "P/L %": f"{profit_loss_pct:.2f}%", "Suggestion": suggestion
                         })
-                        
                         total_value += current_value
                         total_investment += investment_value
-                    except Exception:
-                        continue
-            
+                    except Exception: continue
             if portfolio_data:
                 total_pl = total_value - total_investment
                 total_pl_pct = (total_pl / total_investment) * 100 if total_investment != 0 else 0
-                
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total Portfolio Value", f"{total_value:,.2f} SEK")
                 col2.metric("Total Profit/Loss", f"{total_pl:,.2f} SEK")
                 col3.metric("Total P/L %", f"{total_pl_pct:.2f}%")
-
                 st.write("---")
-                
                 portfolio_df = pd.DataFrame(portfolio_data)
-                
                 def style_table(df):
                     def color_pl(val):
                         if isinstance(val, str) and '%' in val: val = float(val.replace('%', ''))
                         elif isinstance(val, str): val = float(val)
                         color = 'green' if val > 0 else 'red' if val < 0 else 'white'
                         return f'color: {color}'
-                    
                     def color_suggestion(val):
                         color = 'green' if val == 'Hold' else 'red'
                         return f'color: {color}; font-weight: bold'
-
-                    return df.style.applymap(color_pl, subset=['P/L', 'P/L %'])\
-                                     .applymap(color_suggestion, subset=['Suggestion'])
-
+                    return df.style.applymap(color_pl, subset=['P/L', 'P/L %']).applymap(color_suggestion, subset=['Suggestion'])
                 st.dataframe(style_table(portfolio_df), use_container_width=True)
-
                 st.write("---")
                 st.subheader("Manage Portfolio")
-                
                 tickers_in_portfolio = [h['ticker'] for h in st.session_state.portfolio]
                 selected_ticker_to_manage = st.selectbox("Select a holding to manage:", options=[""] + tickers_in_portfolio)
-
                 if selected_ticker_to_manage:
                     selected_index = tickers_in_portfolio.index(selected_ticker_to_manage)
                     holding_to_edit = st.session_state.portfolio[selected_index]
-                    
                     st.write(f"Editing **{selected_ticker_to_manage}**")
                     col1, col2 = st.columns(2)
                     new_quantity = col1.number_input("New Quantity", value=holding_to_edit['quantity'], min_value=0.0, step=0.01, format="%.2f", key=f"qty_{selected_ticker_to_manage}")
                     new_gav = col2.number_input("New GAV", value=holding_to_edit['gav'], min_value=0.0, step=0.01, format="%.2f", key=f"gav_{selected_ticker_to_manage}")
-
                     col1, col2 = st.columns([1, 1])
                     if col1.button("Update Holding", key=f"update_{selected_ticker_to_manage}"):
                         st.session_state.portfolio[selected_index] = {"ticker": selected_ticker_to_manage, "quantity": new_quantity, "gav": new_gav}
                         st.success(f"Updated {selected_ticker_to_manage}!")
                         st.rerun()
-
                     if col2.button("❌ Delete Holding", key=f"delete_{selected_ticker_to_manage}"):
                         st.session_state.portfolio.pop(selected_index)
                         st.warning(f"Deleted {selected_ticker_to_manage} from portfolio.")
                         st.rerun()
+
+    with tab4:
+        st.header("My Stock Watchlist")
+        with st.form("add_watchlist_form", clear_on_submit=True):
+            ticker_to_watch = st.text_input("Enter Ticker Symbol to Watch").upper()
+            submitted = st.form_submit_button("Add to Watchlist")
+            if submitted and ticker_to_watch:
+                if ticker_to_watch not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(ticker_to_watch)
+                    st.success(f"Added {ticker_to_watch} to your watchlist!")
+                else:
+                    st.warning(f"{ticker_to_watch} is already in your watchlist.")
+        st.write("---")
+        if not st.session_state.watchlist:
+            st.info("Your watchlist is empty. Add a stock using the form above.")
+        else:
+            watchlist_data = []
+            with st.spinner("Updating watchlist..."):
+                for ticker in st.session_state.watchlist:
+                    try:
+                        data = fetch(ticker)
+                        if data.empty: continue
+                        strategy_data = generate_signals(data)
+                        current_price = strategy_data['Close'].iloc[-1]
+                        signal_val = strategy_data['Signal'].iloc[-1]
+                        signal = "Buy" if signal_val == 1 else "Sell"
+                        watchlist_data.append({
+                            "Ticker": ticker, "Current Price": f"{current_price:.2f}",
+                            "SMA Short (10)": f"{strategy_data['SMA_Short'].iloc[-1]:.2f}",
+                            "SMA Long (50)": f"{strategy_data['SMA_Long'].iloc[-1]:.2f}", "Signal": signal
+                        })
+                    except Exception: continue
+            if watchlist_data:
+                watchlist_df = pd.DataFrame(watchlist_data)
+                def style_watchlist(df):
+                    def color_signal(val):
+                        color = 'green' if val == 'Buy' else 'red'
+                        return f'color: {color}; font-weight: bold'
+                    return df.style.applymap(color_signal, subset=['Signal'])
+                st.dataframe(style_watchlist(watchlist_df), use_container_width=True)
+            st.write("---")
+            st.subheader("Manage Watchlist")
+            ticker_to_remove = st.selectbox("Select a stock to remove:", options=[""] + st.session_state.watchlist)
+            if st.button("Remove from Watchlist") and ticker_to_remove:
+                st.session_state.watchlist.remove(ticker_to_remove)
+                st.warning(f"Removed {ticker_to_remove} from your watchlist.")
+                st.rerun()
