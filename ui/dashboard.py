@@ -8,23 +8,33 @@ config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.ya
 with open(config_path) as f:
     config = yaml.safe_load(f)
 
-
 symbols = config.get("symbols", [])
 rules = config.get("rules", {})
 
 st.title("Stocks Swing Trade Dashboard")
+st.write("Streamlit app loaded")
+st.write(f"Config symbols: {symbols}")
+
 search_symbol = st.sidebar.text_input("Enter symbol (e.g., AAPL, NOK.OL)", "")
 selected_symbols = [search_symbol.upper()] if search_symbol else symbols
 
 candidate_scores = []
+
 for symbol in selected_symbols:
     df = fetch(symbol)
     if df.empty:
-        st.warning(f"No data for {symbol}")
+        st.warning(f"No data found for {symbol}")
         continue
-    passed, details = apply_screen(df, rules)
+
+    try:
+        passed, details = apply_screen(df, rules)
+    except Exception as e:
+        st.error(f"Error applying screen for {symbol}: {e}")
+        continue
+
     score = sum(1 for v in details.values() if v['passed'])
     candidate_scores.append({"Symbol": symbol, "Score": score, "Passed": passed, "Details": details})
+
     st.subheader(symbol)
     st.write(f"Passes Swing Trade Criteria: {passed}")
     st.line_chart(df['Close'])
