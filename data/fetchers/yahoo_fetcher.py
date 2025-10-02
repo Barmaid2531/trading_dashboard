@@ -1,13 +1,22 @@
 import yfinance as yf
 import pandas as pd
 
-def fetch(symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
-    try:
-        df = yf.download(symbol, period=period, interval=interval)
-        if df.empty:
-            print(f"No data found for {symbol}")
-        df.dropna(inplace=True)
-        return df
-    except Exception as e:
-        print(f"Error fetching data for {symbol}: {e}")
-        return pd.DataFrame()
+def fetch(ticker_symbol: str) -> pd.DataFrame:
+    """
+    Fetches intraday stock data for a given ticker symbol.
+    
+    Args:
+        ticker_symbol: The stock ticker (e.g., 'AAPL').
+        
+    Returns:
+        A pandas DataFrame with 5-minute interval stock data for the last 5 days.
+    """
+    ticker = yf.Ticker(ticker_symbol)
+    
+    # Fetch intraday data for the last 5 days at a 5-minute interval.
+    # Note: Yahoo Finance limits intraday data to the last 60 days.
+    # period="5d" -> 5 days
+    # interval="5m" -> 5 minutes
+    data = ticker.history(period="5d", interval="5m")
+    
+    return data
