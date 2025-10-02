@@ -1,4 +1,4 @@
-ymbols:
+symbols:
   - AAPL
   - MSFT
   - TSLA
@@ -12,11 +12,6 @@ rules:
       period: 14
       threshold: 40
       direction: above
-    - filter: macd_filter
-      fast: 12
-      slow: 26
-      signal: 9
-      direction: bull
   OR:
     - filter: bollinger_filter
       period: 20
