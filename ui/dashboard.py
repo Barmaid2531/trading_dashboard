@@ -3,6 +3,35 @@ import pandas as pd
 import plotly.graph_objects as go
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.moving_average import generate_signals
+import requests
+@st.cache_data(ttl="1d")
+def get_omxs30_tickers():
+    """
+    Scrapes Wikipedia for the list of OMXS30 component stocks using the requests library
+    to avoid HTTP 403 errors.
+    """
+    try:
+        url = "https://en.wikipedia.org/wiki/OMX_Stockholm_30"
+        
+        # Define a User-Agent header to mimic a web browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # Use requests to fetch the page content with the specified header
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # This will raise an error for bad responses (4xx or 5xx)
+        
+        # Pass the HTML content from the response to pandas
+        tables = pd.read_html(response.text)
+        
+        omx_df = tables[0]
+        tickers = [f"{ticker.replace('.', '-')}.ST" for ticker in omx_df['Ticker']]
+        return tickers
+        
+    except Exception as e:
+        st.error(f"Failed to fetch OMXS30 tickers: {e}")
+        return []
 
 # Use Streamlit's caching to prevent re-downloading the stock list on every interaction.
 @st.cache_data(ttl="1d") # Cache the data for one day
