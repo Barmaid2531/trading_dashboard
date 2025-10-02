@@ -1,14 +1,21 @@
-# indicators/bollinger.py
 import pandas as pd
-from typing import Tuple
 
-def calculate_bollinger_bands(close: pd.Series, period: int = 20, std_dev: float = 2.0) -> Tuple[pd.Series, pd.Series]:
+def calculate_bollinger(series: pd.Series, window: int = 20, num_std: int = 2):
     """
-    Calculate Bollinger Bands (upper, lower) for a close price series.
-    Returns (upper_band, lower_band)
+    Calculate Bollinger Bands.
+    
+    Parameters:
+        series (pd.Series): Price series (usually Close prices).
+        window (int): Lookback window size.
+        num_std (int): Number of standard deviations.
+    
+    Returns:
+        tuple: (upper_band, lower_band)
     """
-    ma = close.rolling(window=period, min_periods=period).mean()
-    std = close.rolling(window=period, min_periods=period).std()
-    upper_band = ma + std_dev * std
-    lower_band = ma - std_dev * std
+    rolling_mean = series.rolling(window).mean()
+    rolling_std = series.rolling(window).std()
+    
+    upper_band = rolling_mean + (rolling_std * num_std)
+    lower_band = rolling_mean - (rolling_std * num_std)
+    
     return upper_band, lower_band
