@@ -1,8 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import streamlit as st
+import yaml
 from data.fetchers.yahoo_fetcher import fetch
 from screening.filters import apply_screen
-import os
-import yaml
+
 
 config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
 with open(config_path) as f:
