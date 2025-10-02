@@ -1,10 +1,10 @@
+# ui/dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.moving_average import generate_signals
 
-# (get_omxs30_tickers and plot_stock_chart functions remain the same as before)
 @st.cache_data
 def get_omxs30_tickers():
     """Returns a hardcoded list of OMXS30 tickers."""
@@ -33,11 +33,9 @@ def plot_stock_chart(strategy_data, ticker_symbol):
     fig.update_layout(title=f'{ticker_symbol} Trading Signals', xaxis_title='Date', yaxis_title='Price (SEK)', legend_title='Legend', height=500)
     return fig
 
-
 def run_app():
     st.set_page_config(page_title="Trading Dashboard", page_icon="💹", layout="wide")
 
-    # --- Sidebar ---
     with st.sidebar:
         st.title("💹 Trading Dashboard")
         st.info("This app analyzes the OMXS30 index using a Moving Average Crossover strategy to identify potential intraday buy signals.")
@@ -45,19 +43,14 @@ def run_app():
         st.write("Strategy: Buy when the short-term (10-period) moving average crosses above the long-term (50-period) one.")
         st.warning("Disclaimer: This is an educational tool and not financial advice.")
 
-    # --- Main Page Title ---
     st.title("OMXS30 Intraday Analysis")
 
-    # --- Initialize portfolio in session state if it doesn't exist ---
     if 'portfolio' not in st.session_state:
         st.session_state.portfolio = []
 
-    # --- Tabs for different functionalities ---
     tab1, tab2, tab3 = st.tabs(["📈 OMXS30 Screener", "🔍 Individual Stock Analysis", "💼 My Portfolio"])
 
-    # --- Tab 1 & 2 (remain the same as before) ---
     with tab1:
-        # (Code for Tab 1 is unchanged)
         st.header("Find Recent Buy Signals")
         if st.button("Analyze All OMXS30 Stocks", type="primary"):
             tickers = get_omxs30_tickers()
@@ -90,7 +83,6 @@ def run_app():
                 st.info("Analysis complete. No stocks are currently showing a 'Buy' signal.")
 
     with tab2:
-        # (Code for Tab 2 is unchanged)
         st.header("Deep-Dive on a Single Stock")
         omxs30_tickers = get_omxs30_tickers()
         ticker_to_analyze = st.selectbox("Select from OMXS30 or type any ticker:", options=[""] + omxs30_tickers, help="You can select from the list or start typing a custom ticker like 'GOOGL' or 'TSLA'.")
@@ -119,11 +111,9 @@ def run_app():
                     st.warning("No data found for this ticker.")
             except Exception as e: st.error(f"An error occurred: {e}")
 
-    # --- Tab 3: My Portfolio ---
     with tab3:
         st.header("My Portfolio Tracker")
 
-        # --- Input Form to Add Holdings ---
         with st.form("add_holding_form", clear_on_submit=True):
             st.write("Add a new stock to your portfolio")
             col1, col2, col3 = st.columns(3)
@@ -138,7 +128,6 @@ def run_app():
 
         st.write("---")
 
-        # --- Display Portfolio ---
         if not st.session_state.portfolio:
             st.info("Your portfolio is empty. Add a stock using the form above.")
         else:
@@ -159,7 +148,6 @@ def run_app():
                         profit_loss = current_value - investment_value
                         profit_loss_pct = (profit_loss / investment_value) * 100 if investment_value != 0 else 0
                         
-                        # Get the latest signal from the strategy
                         last_signal_val = strategy_data['Signal'].iloc[-1]
                         suggestion = "Hold" if last_signal_val == 1 else "Sell"
 
@@ -176,18 +164,16 @@ def run_app():
                         continue
             
             if portfolio_data:
-                # --- Display Portfolio Summary ---
                 total_pl = total_value - total_investment
                 total_pl_pct = (total_pl / total_investment) * 100 if total_investment != 0 else 0
                 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total Portfolio Value", f"{total_value:,.2f} SEK")
                 col2.metric("Total Profit/Loss", f"{total_pl:,.2f} SEK")
-                col3.metric("Total P/L %", f"{total_pl_pct:.2f}%", delta=f"{total_pl_pct:.2f}%")
+                col3.metric("Total P/L %", f"{total_pl_pct:.2f}%")
 
                 st.write("---")
                 
-                # --- Display Portfolio Table with Styling ---
                 portfolio_df = pd.DataFrame(portfolio_data)
                 
                 def style_table(df):
@@ -206,5 +192,28 @@ def run_app():
 
                 st.dataframe(style_table(portfolio_df), use_container_width=True)
 
-if __name__ == "__main__":
-    run_app()
+                st.write("---")
+                st.subheader("Manage Portfolio")
+                
+                tickers_in_portfolio = [h['ticker'] for h in st.session_state.portfolio]
+                selected_ticker_to_manage = st.selectbox("Select a holding to manage:", options=[""] + tickers_in_portfolio)
+
+                if selected_ticker_to_manage:
+                    selected_index = tickers_in_portfolio.index(selected_ticker_to_manage)
+                    holding_to_edit = st.session_state.portfolio[selected_index]
+                    
+                    st.write(f"Editing **{selected_ticker_to_manage}**")
+                    col1, col2 = st.columns(2)
+                    new_quantity = col1.number_input("New Quantity", value=holding_to_edit['quantity'], min_value=0.0, step=0.01, format="%.2f", key=f"qty_{selected_ticker_to_manage}")
+                    new_gav = col2.number_input("New GAV", value=holding_to_edit['gav'], min_value=0.0, step=0.01, format="%.2f", key=f"gav_{selected_ticker_to_manage}")
+
+                    col1, col2 = st.columns([1, 1])
+                    if col1.button("Update Holding", key=f"update_{selected_ticker_to_manage}"):
+                        st.session_state.portfolio[selected_index] = {"ticker": selected_ticker_to_manage, "quantity": new_quantity, "gav": new_gav}
+                        st.success(f"Updated {selected_ticker_to_manage}!")
+                        st.rerun()
+
+                    if col2.button("❌ Delete Holding", key=f"delete_{selected_ticker_to_manage}"):
+                        st.session_state.portfolio.pop(selected_index)
+                        st.warning(f"Deleted {selected_ticker_to_manage} from portfolio.")
+                        st.rerun()
