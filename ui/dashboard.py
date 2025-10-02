@@ -1,73 +1,70 @@
-import streamlit as st
-from data.fetchers.yahoo_fetcher import fetch
-import pandas as pd
-import os
-import yaml
+# ui/dashboard.py
 
+import streamlit as st
+import pandas as pd
+
+# This import is the one that was causing the error.
+# It relies on the project being run from the root folder via main.py.
 from data.fetchers.yahoo_fetcher import fetch
-from indicators.rsi import calculate_rsi
-from indicators.bollinger import calculate_bollinger
-from indicators.macd import calculate_macd
 
 def run_app():
-    st.title("My Trading Dashboard")
-    # Load config
-    config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    """
+    This is the main function that builds and runs the Streamlit dashboard.
+    """
+
+    # --- 1. Page Configuration ---
+    # Set the title and icon that appear in the browser tab.
+    st.set_page_config(
+        page_title="Trading Dashboard",
+        page_icon="💹",
+        layout="wide"
+    )
+
+    # --- 2. Page Title ---
+    # Display a title at the top of the app.
+    st.title("Simple Stock Price Dashboard")
+
+    # --- 3. Sidebar for User Input ---
+    # Use the sidebar for inputs to keep the main area clean.
+    st.sidebar.header("User Input")
     
-    st.title("📊 OMXS30 Swing Trade Dashboard")
-    
-    tickers = config["omxs30"]["tickers"]
-    results = []
-    
-    st.write("🔍 Fetching and analyzing data... Please wait.")
-    
-    for ticker in tickers:
+    # Get the stock ticker from the user. Default to 'AAPL'.
+    ticker_symbol = st.sidebar.text_input(
+        label="Enter Stock Ticker",
+        value="AAPL"
+    ).upper()
+
+    # --- 4. Main Content Area ---
+    # Only proceed if the user has entered a ticker symbol.
+    if ticker_symbol:
+        st.header(f"Displaying data for: {ticker_symbol}")
+
         try:
-            df = fetch(ticker, period="6mo", interval="1d")
-            if df.empty:
-                st.warning(f"No data for {ticker}")
-                continue
-    
-            df["RSI"] = calculate_rsi(df["Close"])
-            df["Upper"], df["Lower"] = calculate_bollinger(df["Close"])
-            macd, signal = calculate_macd(df["Close"])
-            df["MACD"], df["Signal"] = macd, signal
-    
-            latest = df.iloc[-1]
-    
-            # Signal logic
-            if latest["RSI"] < 30 and latest["Close"] < latest["Lower"]:
-                signal_text = "Strong Buy"
-            elif latest["RSI"] > 70 and latest["Close"] > latest["Upper"]:
-                signal_text = "Strong Sell"
+            # Use a spinner to show a loading message while fetching data.
+            with st.spinner(f"Fetching data for {ticker_symbol}..."):
+                stock_data = fetch(ticker_symbol)
+
+            # Check if the fetch function returned a non-empty DataFrame.
+            if not stock_data.empty:
+                # --- Display Charts and Data ---
+                st.subheader("Closing Price History")
+                # Assuming the DataFrame has a 'Close' column for the price.
+                st.line_chart(stock_data['Close'])
+
+                st.subheader("Recent Stock Data")
+                # Display the raw data in a table.
+                st.dataframe(stock_data)
             else:
-                signal_text = "Neutral"
-    
-            results.append({
-                "Ticker": ticker,
-                "Close": round(latest["Close"], 2),
-                "RSI": round(latest["RSI"], 2),
-                "Signal": signal_text,
-                "Entry Point": round(latest["Close"] * 0.98, 2),
-                "Exit Point": round(latest["Close"] * 1.05, 2),
-            })
-    
+                st.warning("No data returned for this ticker. Please check the symbol.")
+
         except Exception as e:
-            st.error(f"Error processing {ticker}: {e}")
-    
-    # ✅ Show top candidates
-    if results:
-        df = pd.DataFrame(results)
-        st.subheader("Top Swing Trade Candidates (sorted by RSI)")
-        st.dataframe(df.sort_values(by=["RSI"], ascending=True))
+            # Display a friendly error message if the fetch fails for any reason.
+            st.error(f"An error occurred: {e}")
     else:
-        st.warning("⚠️ No results available. Possibly tickers or data fetching failed.")
-    
-    # ✅ Always show all analyzed stocks
-    st.subheader("All Analyzed Stocks")
-    if results:
-        st.dataframe(pd.DataFrame(results))
-    else:
-        st.write("No stock data analyzed.")
+        # Show a message if the text input is empty.
+        st.info("Please enter a stock ticker in the sidebar to get started.")
+
+# This standard Python block allows you to run this script directly for testing.
+# For example: `python ui/dashboard.py` from your project's root directory.
+if __name__ == "__main__":
+    run_app()
