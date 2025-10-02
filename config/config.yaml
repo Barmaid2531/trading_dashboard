@@ -1,0 +1,24 @@
+symbols:
+  - AAPL
+  - MSFT
+  - TSLA
+  - NOK.OL
+  - SAS.ST
+  - SHOP.TO
+
+rules:
+  AND:
+    - filter: rsi_filter
+      period: 14
+      threshold: 40
+      direction: above
+    - filter: macd_filter
+      fast: 12
+      slow: 26
+      signal: 9
+      direction: bull
+  OR:
+    - filter: bollinger_filter
+      period: 20
+      std_dev: 2
+      direction: below
