@@ -1,50 +1,61 @@
-import sys
-import os
+import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import streamlit as st
+import pandas as pd
 import yaml
 from data.fetchers.yahoo_fetcher import fetch
+from data.fetchers.index_fetcher import get_omxs30_tickers
 from screening.filters import apply_screen
+from indicators.rsi import calculate_rsi
+from indicators.macd import calculate_macd
+from indicators.bollinger import calculate_bollinger_bands
 
+st.title("OMXS30 Swing Trade Dashboard")
 
-config_path = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")
-with open(config_path) as f:
-    config = yaml.safe_load(f)
+# Step 1: Fetch OMXI30 tickers dynamically
+symbols = get_omxs30_tickers()
+st.sidebar.write("Loaded OMXI30 Symbols:", symbols)
 
-symbols = config.get("symbols", [])
-rules = config.get("rules", {})
+def analyze_stock(symbol):
+    df = fetch(symbol, period="6mo", interval="1d")
+    if df is None or df.empty:
+        return None
 
-st.title("Stocks Swing Trade Dashboard")
-st.write("Streamlit app loaded")
-st.write(f"Config symbols: {symbols}")
+    df["RSI"] = calculate_rsi(df["Close"])
+    df["MACD"], df["Signal"] = calculate_macd(df["Close"])
+    df["Upper"], df["Lower"] = calculate_bollinger_bands(df["Close"])
 
-search_symbol = st.sidebar.text_input("Enter symbol (e.g., AAPL, NOK.OL)", "")
-selected_symbols = [search_symbol.upper()] if search_symbol else symbols
+    last = df.iloc[-1]
+    signal, entry, exit = "Neutral", None, None
 
-candidate_scores = []
+    if last["RSI"] < 30 and last["Close"] <= last["Lower"]:
+        signal, entry = "Strong Buy", last["Close"]
+    elif last["RSI"] > 70 and last["Close"] >= last["Upper"]:
+        signal, exit = "Sell", last["Close"]
+    elif last["MACD"] > last["Signal"]:
+        signal = "Buy"
+    elif last["MACD"] < last["Signal"]:
+        signal = "Weak Sell"
 
-for symbol in selected_symbols:
-    df = fetch(symbol)
-    if df.empty:
-        st.warning(f"No data found for {symbol}")
-        continue
+    return {
+        "Symbol": symbol,
+        "Signal": signal,
+        "Entry Point": entry,
+        "Exit Point": exit,
+        "RSI": round(last["RSI"], 2),
+        "Price": last["Close"]
+    }
 
-    try:
-        passed, details = apply_screen(df, rules)
-    except Exception as e:
-        st.error(f"Error applying screen for {symbol}: {e}")
-        continue
+results = []
+for sym in symbols:
+    res = analyze_stock(sym)
+    if res:
+        results.append(res)
 
-    score = sum(1 for v in details.values() if v['passed'])
-    candidate_scores.append({"Symbol": symbol, "Score": score, "Passed": passed, "Details": details})
-
-    st.subheader(symbol)
-    st.write(f"Passes Swing Trade Criteria: {passed}")
-    st.line_chart(df['Close'])
-
-if candidate_scores:
-    ranked_candidates = sorted(candidate_scores, key=lambda x: x['Score'], reverse=True)
-    st.header("Top Swing Trade Candidates")
-    top_table = [{"Symbol": c["Symbol"], "Score": c["Score"], "Passed": c["Passed"]} for c in ranked_candidates]
-    st.table(top_table)
+if results:
+    df = pd.DataFrame(results)
+    st.subheader("Top Swing Trade Candidates (OMXI30)")
+    st.dataframe(df.sort_values(by=["Signal", "RSI"], ascending=[True, True]))
+else:
+    st.warning("No results. Check data fetching.")
