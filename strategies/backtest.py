@@ -1,7 +1,7 @@
 from backtesting import Backtest, Strategy
 import pandas as pd
 from strategies.advanced_analyzer import analyze_stock
-from data.fetchers.finnhub_fetcher import fetch_daily_bars
+from data.fetchers.yfinance_fetcher import fetch_daily_bars # Use yfinance fetcher
 from bokeh.embed import components
 
 class AdvancedStrategy(Strategy):
@@ -16,10 +16,10 @@ class AdvancedStrategy(Strategy):
             self.position.close()
 
 def run_backtest(ticker, start_date, end_date):
-    """Runs a backtest for a given ticker and date range using Finnhub data."""
-    days = (end_date - start_date).days
-    data = fetch_daily_bars(ticker, days=days)
-    data = data[(data.index >= pd.to_datetime(start_date)) & (data.index <= pd.to_datetime(end_date))]
+    """Runs a backtest for a given ticker and date range using yfinance data."""
+    period_in_years = (end_date - start_date).days / 365.25
+    data = fetch_daily_bars(ticker, period=f"{int(period_in_years * 12)}mo")
+    data = data[(data.index.date >= start_date) & (data.index.date <= end_date)]
     
     if data.empty or len(data) < 50:
         return None, None, None
