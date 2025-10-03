@@ -1,3 +1,4 @@
+# ui/dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -33,6 +34,36 @@ def plot_stock_chart(strategy_data, ticker_symbol):
     fig.update_layout(title=f'{ticker_symbol} Trading Signals', xaxis_title='Date', yaxis_title='Price (SEK)', legend_title='Legend', height=500)
     return fig
 
+def display_detailed_view(ticker):
+    """Fetches, analyzes, and displays the detailed view for a single stock."""
+    try:
+        with st.spinner(f"Fetching and analyzing {ticker}..."):
+            stock_data = fetch(ticker)
+        
+        if not stock_data.empty:
+            strategy_data = generate_signals(stock_data)
+            
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.subheader("Key Metrics")
+                last_price = strategy_data['Close'].iloc[-1]
+                sma_short = strategy_data['SMA_Short'].iloc[-1]
+                sma_long = strategy_data['SMA_Long'].iloc[-1]
+                st.metric("Last Price", f"{last_price:.2f} SEK")
+                st.metric("Short SMA (10)", f"{sma_short:.2f}", f"{sma_short - last_price:.2f}")
+                st.metric("Long SMA (50)", f"{sma_long:.2f}", f"{sma_long - last_price:.2f}")
+
+            with col2:
+                fig = plot_stock_chart(strategy_data, ticker)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("View Full Data and Signals"):
+                st.dataframe(strategy_data)
+        else:
+            st.warning("No data found for this ticker.")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+
 def run_app():
     st.set_page_config(page_title="Trading Dashboard", page_icon="💹", layout="wide")
 
@@ -48,24 +79,32 @@ def run_app():
         st.info("An educational tool to analyze stocks using a Moving Average Crossover strategy.")
         st.write("---")
         
-        # --- Portfolio Import/Export ---
-        st.header("My Portfolio Data")
+        st.header("My Data")
         
-        uploaded_file = st.file_uploader("Import Portfolio", type=['json'])
+        uploaded_file = st.file_uploader("Import Data (JSON)", type=['json'])
         if uploaded_file is not None:
             try:
-                portfolio_data = json.load(uploaded_file)
-                st.session_state.portfolio = portfolio_data
-                st.success("Portfolio imported successfully!")
+                data = json.load(uploaded_file)
+                if isinstance(data, dict):
+                    st.session_state.portfolio = data.get('portfolio', [])
+                    st.session_state.watchlist = data.get('watchlist', [])
+                else:
+                    st.session_state.portfolio = data
+                    st.session_state.watchlist = []
+                st.success("Data imported successfully!")
             except Exception as e:
                 st.error(f"Error importing file: {e}")
 
-        if st.session_state.portfolio:
-            portfolio_json = json.dumps(st.session_state.portfolio, indent=4)
+        if st.session_state.portfolio or st.session_state.watchlist:
+            data_to_export = {
+                "portfolio": st.session_state.portfolio,
+                "watchlist": st.session_state.watchlist
+            }
+            export_json = json.dumps(data_to_export, indent=4)
             st.download_button(
-                label="Export Portfolio",
-                data=portfolio_json,
-                file_name="my_portfolio.json",
+                label="Export Data",
+                data=export_json,
+                file_name="my_data.json",
                 mime="application/json"
             )
         
@@ -75,7 +114,7 @@ def run_app():
     # --- Main Page Title ---
     st.title("Intraday Stock Analysis")
 
-    # --- Tabs for different functionalities ---
+    # --- Tabs ---
     tab1, tab2, tab3, tab4 = st.tabs(["📈 OMXS30 Screener", "🔍 Individual Analysis", "💼 My Portfolio", "🔭 Watchlist"])
 
     with tab1:
@@ -114,30 +153,13 @@ def run_app():
     with tab2:
         st.header("Deep-Dive on a Single Stock")
         omxs30_tickers = get_omxs30_tickers()
-        ticker_to_analyze = st.selectbox("Select from OMXS30 or type any ticker:", options=[""] + omxs30_tickers, help="You can select from the list or start typing a custom ticker like 'GOOGL' or 'TSLA'.")
+        ticker_to_analyze = st.selectbox(
+            "Select from OMXS30 or type any ticker:",
+            options=[""] + omxs30_tickers,
+            help="You can select from the list or start typing a custom ticker."
+        )
         if ticker_to_analyze:
-            try:
-                with st.spinner(f"Fetching and analyzing {ticker_to_analyze}..."):
-                    stock_data = fetch(ticker_to_analyze)
-                if not stock_data.empty:
-                    strategy_data = generate_signals(stock_data)
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        st.subheader("Key Metrics")
-                        last_price = strategy_data['Close'].iloc[-1]
-                        sma_short = strategy_data['SMA_Short'].iloc[-1]
-                        sma_long = strategy_data['SMA_Long'].iloc[-1]
-                        st.metric("Last Price", f"{last_price:.2f} SEK")
-                        st.metric("Short SMA (10)", f"{sma_short:.2f}", f"{sma_short - last_price:.2f}")
-                        st.metric("Long SMA (50)", f"{sma_long:.2f}", f"{sma_long - last_price:.2f}")
-                    with col2:
-                        fig = plot_stock_chart(strategy_data, ticker_to_analyze)
-                        st.plotly_chart(fig, use_container_width=True)
-                    with st.expander("View Full Data and Signals"):
-                        st.dataframe(strategy_data)
-                else:
-                    st.warning("No data found for this ticker.")
-            except Exception as e: st.error(f"An error occurred: {e}")
+            display_detailed_view(ticker_to_analyze)
 
     with tab3:
         st.header("My Portfolio Tracker")
@@ -153,7 +175,7 @@ def run_app():
                 st.success(f"Added {quantity} shares of {ticker} to your portfolio!")
         st.write("---")
         if not st.session_state.portfolio:
-            st.info("Your portfolio is empty. Add a stock or import a portfolio file from the sidebar.")
+            st.info("Your portfolio is empty. Add a stock or import a data file from the sidebar.")
         else:
             portfolio_data, total_value, total_investment = [], 0, 0
             with st.spinner("Updating portfolio data..."):
@@ -197,25 +219,34 @@ def run_app():
                         return f'color: {color}; font-weight: bold'
                     return df.style.applymap(color_pl, subset=['P/L', 'P/L %']).applymap(color_suggestion, subset=['Suggestion'])
                 st.dataframe(style_table(portfolio_df), use_container_width=True)
+
                 st.write("---")
-                st.subheader("Manage Portfolio")
-                tickers_in_portfolio = [h['ticker'] for h in st.session_state.portfolio]
-                selected_ticker_to_manage = st.selectbox("Select a holding to manage:", options=[""] + tickers_in_portfolio)
-                if selected_ticker_to_manage:
-                    selected_index = tickers_in_portfolio.index(selected_ticker_to_manage)
+                st.subheader("Manage & Analyze Portfolio")
+                portfolio_tickers = [h['ticker'] for h in st.session_state.portfolio]
+                selected_ticker = st.selectbox("Select a holding for details or to manage:", options=[""] + portfolio_tickers)
+                if selected_ticker:
+                    # Detailed View
+                    display_detailed_view(selected_ticker)
+                    
+                    # Management Section
+                    st.write("---")
+                    st.write(f"Editing **{selected_ticker}**")
+                    selected_index = portfolio_tickers.index(selected_ticker)
                     holding_to_edit = st.session_state.portfolio[selected_index]
-                    st.write(f"Editing **{selected_ticker_to_manage}**")
+                    
                     col1, col2 = st.columns(2)
-                    new_quantity = col1.number_input("New Quantity", value=holding_to_edit['quantity'], min_value=0.0, step=0.01, format="%.2f", key=f"qty_{selected_ticker_to_manage}")
-                    new_gav = col2.number_input("New GAV", value=holding_to_edit['gav'], min_value=0.0, step=0.01, format="%.2f", key=f"gav_{selected_ticker_to_manage}")
+                    new_quantity = col1.number_input("New Quantity", value=holding_to_edit['quantity'], min_value=0.0, step=0.01, format="%.2f", key=f"qty_{selected_ticker}")
+                    new_gav = col2.number_input("New GAV", value=holding_to_edit['gav'], min_value=0.0, step=0.01, format="%.2f", key=f"gav_{selected_ticker}")
+
                     col1, col2 = st.columns([1, 1])
-                    if col1.button("Update Holding", key=f"update_{selected_ticker_to_manage}"):
-                        st.session_state.portfolio[selected_index] = {"ticker": selected_ticker_to_manage, "quantity": new_quantity, "gav": new_gav}
-                        st.success(f"Updated {selected_ticker_to_manage}!")
+                    if col1.button("Update Holding", key=f"update_{selected_ticker}"):
+                        st.session_state.portfolio[selected_index] = {"ticker": selected_ticker, "quantity": new_quantity, "gav": new_gav}
+                        st.success(f"Updated {selected_ticker}!")
                         st.rerun()
-                    if col2.button("❌ Delete Holding", key=f"delete_{selected_ticker_to_manage}"):
+
+                    if col2.button("❌ Delete Holding", key=f"delete_{selected_ticker}"):
                         st.session_state.portfolio.pop(selected_index)
-                        st.warning(f"Deleted {selected_ticker_to_manage} from portfolio.")
+                        st.warning(f"Deleted {selected_ticker} from portfolio.")
                         st.rerun()
 
     with tab4:
