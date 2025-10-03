@@ -1,12 +1,11 @@
-import streamlit as st
-import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import streamlit.components.v1 as components
 import joblib
 
-from data.fetchers.finnhub_fetcher import fetch_daily_bars
+# Use the yfinance fetcher
+from data.fetchers.yfinance_fetcher import fetch_daily_bars
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
 
