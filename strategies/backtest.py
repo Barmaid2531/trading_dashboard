@@ -30,24 +30,19 @@ def run_backtest(ticker, start_date, end_date):
     if data.empty:
         return None, None
         
-    # --- NEW ROBUST FIX: Force column names to match what backtesting.py expects ---
-    # This handles all inconsistencies from yfinance (e.g., 'Adj Close', lowercase, etc.)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.droplevel(0)
+    
     expected_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-    
-    # Ensure we don't try to rename more columns than we have
     num_cols_to_rename = min(len(data.columns), len(expected_cols))
-    
-    # Create a mapping from the actual column names to the expected ones
     rename_map = {data.columns[i]: expected_cols[i] for i in range(num_cols_to_rename)}
-    
     data.rename(columns=rename_map, inplace=True)
-    # --------------------------------------------------------------------------
     
-    # Check if all required columns are present after renaming
+    # --- FIX: Raise a ValueError instead of calling st.error ---
     required_cols = {'Open', 'High', 'Low', 'Close'}
     if not required_cols.issubset(data.columns):
-        st.error(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
-        return None, None
+        # This error will be caught by the main dashboard file
+        raise ValueError(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
 
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
     stats, plot = bt.run(ticker=ticker)
