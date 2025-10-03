@@ -111,7 +111,7 @@ def run_app():
 
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist"])
 
-    def plot_stock_chart(strategy_data, ticker_symbol):
+def plot_stock_chart(strategy_data, ticker_symbol):
     """
     Generates a high-resolution Plotly figure with a range slider 
     and percentage change calculation.
