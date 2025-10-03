@@ -4,17 +4,16 @@ import pandas as pd
 from strategies.advanced_analyzer import analyze_stock
 
 class AdvancedStrategy(Strategy):
+    ticker = None  # Add a placeholder for the ticker
+
     def init(self):
-        # Create a DataFrame compatible with the analyzer
         df = pd.DataFrame({
-            'Open': self.data.Open,
-            'High': self.data.High,
-            'Low': self.data.Low,
-            'Close': self.data.Close,
+            'Open': self.data.Open, 'High': self.data.High,
+            'Low': self.data.Low, 'Close': self.data.Close,
             'Volume': self.data.Volume
         })
-        # Pre-calculate all indicators
-        self.signals = self.I(lambda: analyze_stock(df)['Signal_Score'], name="Signal_Score")
+        # Pass the ticker to the analyzer
+        self.signals = self.I(lambda: analyze_stock(df, self.ticker)['Signal_Score'], name="Signal_Score")
 
     def next(self):
         if self.signals[-1] >= 3:
@@ -32,12 +31,17 @@ def run_backtest(ticker, start_date, end_date):
     if data.empty:
         return None, None
         
-    # --- FIX: Flatten MultiIndex columns from yfinance ---
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(0)
-        
+    
+    # --- FIX: Capitalize column names for backtesting.py ---
+    data.rename(columns={
+        "open": "Open", "high": "High", "low": "Low", 
+        "close": "Close", "volume": "Volume"
+    }, inplace=True)
+    
+    # Pass the ticker to the strategy
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
-    stats = bt.run()
-    plot = bt.plot()
+    stats, plot = bt.run(ticker=ticker) # Pass ticker to the run method
     
     return stats, plot
