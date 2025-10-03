@@ -1,7 +1,21 @@
 import pandas as pd
 import pandas_ta as ta
 
-def analyze_stock(data: pd.DataFrame) -> pd.DataFrame:
+def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    # ... (existing indicator calculations) ...
+
+    # Fetch daily data to check the long-term trend
+    daily_data = yf.download(ticker, period="1y", interval="1d", progress=False)
+    daily_data['SMA_50_daily'] = daily_data['Close'].ta.sma(50)
+    
+    # --- Create a "Signal Score" ---
+    data['Signal_Score'] = 0
+    # ... (existing scoring logic) ...
+
+    # Add a bonus point if the daily trend is also up
+    if not daily_data.empty and data['Close'].iloc[-1] > daily_data['SMA_50_daily'].iloc[-1]:
+        data['Signal_Score'] += 1 # This would change the max score to 5
+
     """
     Performs an advanced analysis on stock data using multiple indicators.
     """
@@ -44,3 +58,4 @@ def analyze_stock(data: pd.DataFrame) -> pd.DataFrame:
     data['Recommendation'] = data['Signal_Score'].apply(get_recommendation)
     
     return data
+    # ... (rest of the function) ...
