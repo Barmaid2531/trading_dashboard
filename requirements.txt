@@ -1,6 +1,6 @@
 streamlit
 pandas
-finnhub-python
+yfinance
 pandas-ta
 backtesting
 bokeh
