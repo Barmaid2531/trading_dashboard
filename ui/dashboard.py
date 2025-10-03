@@ -6,25 +6,44 @@ import json
 import streamlit.components.v1 as components
 import joblib
 
-# Import the new Finnhub fetcher and other custom modules
-from data.fetchers.finnhub_fetcher import get_nordic_assets, fetch_daily_bars
+from data.fetchers.finnhub_fetcher import fetch_daily_bars
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
 
-@st.cache_resource
-def load_model():
-    """Loads the trained ML model from the /ml folder."""
-    try:
-        model = joblib.load("ml/xgb_model.joblib")
-        return model
-    except FileNotFoundError:
-        return None
+@st.cache_data
+def get_nordic_indices():
+    """Returns a dictionary of major Nordic indices and their component tickers."""
+    indices = {
+        "OMXS30 (Sweden)": [
+            'ERIC-B.ST', 'ADDT-B.ST', 'SCA-B.ST', 'AZN.ST', 'BOL.ST', 'SAAB-B.ST', 'NDA-SE.ST', 'SKA-B.ST',
+            'TEL2-B.ST', 'HM-B.ST', 'TELIA.ST', 'NIBE-B.ST', 'LIFCO-B.ST', 'SHB-A.ST', 'SEB-A.ST', 'ESSITY-B.ST',
+            'SWED-A.ST', 'EVO.ST', 'SKF-B.ST', 'INDU-C.ST', 'SAND.ST', 'VOLV-B.ST', 'HEXA-B.ST', 'ABB.ST',
+            'ASSA-B.ST', 'EPI-A.ST', 'INVE-B.ST', 'EQT.ST', 'ALFA.ST', 'ATCO-A.ST'
+        ],
+        "OMXC25 (Denmark)": [
+            'MAERSK-B.CO', 'NOVO-B.CO', 'DSV.CO', 'VWS.CO', 'PNDORA.CO', 'GN.CO', 'ORSTED.CO', 'DANSKE.CO',
+            'NZYM-B.CO', 'GMAB.CO', 'TRYG.CO', 'CARL-B.CO', 'COLOB.CO', 'CHR.CO', 'JYSK.CO', 'RBREW.CO',
+            'ROCK-B.CO', 'ISS.CO', 'DEMANT.CO', 'AMBU-B.CO', 'BAVA.CO', 'NETC.CO', 'NDA-DK.CO', 'SYDB.CO', 'FLS.CO'
+        ],
+        "OMXH25 (Finland)": [
+            'NOKIA.HE', 'SAMPO.HE', 'KNEBV.HE', 'FORTUM.HE', 'UPM.HE', 'NESTE.HE', 'STERV.HE', 'ELISA.HE',
+            'WRT1V.HE', 'OUT1V.HE', 'TIETO.HE', 'ORNBV.HE', 'HUH1V.HE', 'CGCBV.HE', 'KESKOB.HE', 'MOCORP.HE',
+            'VALMT.HE', 'YIT.HE', 'KCR.HE', 'TELIA1.HE', 'NDA-FI.HE', 'SSABBH.HE', 'METSO.HE', 'QTCOM.HE', 'KOJAMO.HE'
+        ],
+        "OBX (Norway)": [
+            'EQNR.OL', 'DNB.OL', 'TEL.OL', 'MOWI.OL', 'AKERBP.OL', 'YAR.OL', 'NHY.OL', 'ORK.OL',
+            'SUBC.OL', 'SALM.OL', 'AKSO.OL', 'SCHA.OL', 'NEL.OL', 'FRO.OL',
+ 'STB.OL', 'NOD.OL', 'GJF.OL', 'RECSI.OL', 'BWO.OL', 'NAS.OL', 'OTL.OL', 'SCATC.OL', 'TGS.OL'
+        ]
+    }
+    return indices
 
 def plot_stock_chart(strategy_data, ticker_symbol):
     """Generates a high-resolution Plotly figure with a range slider and percentage change calculation."""
     if strategy_data is None or len(strategy_data) < 2:
         fig = go.Figure()
-        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data to Display Chart', xaxis_visible=False, yaxis_visible=False)
+        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data to Display Chart', xaxis_visible=False, yaxis_visible=False,
+                          annotations=[dict(text="No recent intraday data available.", xref="paper", yref="paper", showarrow=False, font=dict(size=16))])
         return fig
 
     start_price = strategy_data['Close'].iloc[0]
@@ -53,7 +72,7 @@ def plot_stock_chart(strategy_data, ticker_symbol):
     return fig
 
 def display_detailed_view(ticker):
-    """Fetches, analyzes, and displays the detailed view for a single stock using Finnhub."""
+    """Fetches, analyzes, and displays the detailed view for a single stock."""
     try:
         with st.spinner(f"Fetching data for {ticker}..."):
             stock_data = fetch_daily_bars(ticker)
@@ -92,7 +111,7 @@ def run_app():
 
     with st.sidebar:
         st.title("💹 Trading Dashboard")
-        st.info("Swing trading analysis for Nordic markets using Finnhub data.")
+        st.info("Swing trading analysis for Nordic markets.")
         st.write("---")
         st.header("My Data")
         uploaded_file = st.file_uploader("Import Data (JSON)", type=['json'])
@@ -101,43 +120,38 @@ def run_app():
                 data = json.load(uploaded_file)
                 st.session_state.portfolio = data.get('portfolio', [])
                 st.session_state.watchlist = data.get('watchlist', [])
-                st.success("Data imported successfully!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error importing file: {e}")
-
+                st.success("Data imported successfully!"), st.rerun()
+            except Exception as e: st.error(f"Error importing file: {e}")
         if st.session_state.portfolio or st.session_state.watchlist:
             data_to_export = {"portfolio": st.session_state.portfolio, "watchlist": st.session_state.watchlist}
-            export_json = json.dumps(data_to_export, indent=4)
-            st.download_button("Export Data", export_json, "my_data.json", "application/json")
-        st.write("---")
-        st.warning("Disclaimer: Not financial advice.")
+            st.download_button("Export Data", json.dumps(data_to_export, indent=4), "my_data.json", "application/json")
+        st.write("---"), st.warning("Disclaimer: Not financial advice.")
 
     st.title("Nordic Market Swing Trading Analysis")
 
-    tab_names = ["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist", "🧪 Backtester"]
-    tabs = st.tabs(tab_names)
+    tabs = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist", "🧪 Backtester"])
 
     with tabs[0]: # Screener
-        st.header("Find Strong Buy Signals (Nordic Markets)")
-        if st.button("Run Full Nordic Market Scan", type="primary"):
-            with st.spinner("Fetching asset list... This may take a moment."):
-                all_assets = get_nordic_assets()
-            st.info(f"Found {len(all_assets)} assets. Now scanning for signals...")
+        st.header("Nordic Index Screener")
+        nordic_indices = get_nordic_indices()
+        selected_index = st.selectbox("Select an Index to Scan:", options=list(nordic_indices.keys()))
+        
+        if st.button(f"Scan {selected_index} for Strong Buy Signals", type="primary"):
+            tickers_to_scan = nordic_indices[selected_index]
             strong_buys = []
             progress_bar = st.progress(0)
-            for i, asset in enumerate(all_assets):
-                progress_bar.progress((i + 1) / len(all_assets), f"Scanning {asset['symbol']}...")
+            for i, ticker in enumerate(tickers_to_scan):
+                progress_bar.progress((i + 1) / len(tickers_to_scan), f"Scanning {ticker}...")
                 try:
-                    data = fetch_daily_bars(asset['symbol'], days=100)
+                    data = fetch_daily_bars(ticker, days=100)
                     if not data.empty and len(data) > 50:
-                        strategy_data = analyze_stock(data, asset['symbol'])
+                        strategy_data = analyze_stock(data, ticker)
                         last_row = strategy_data.iloc[-1]
                         if last_row['Signal_Score'] >= 4:
                             strong_buys.append({
-                                'Ticker': asset['symbol'], 'Name': asset['name'], 'Exchange': asset['exchange'],
-                                'Last Price': f"{last_row['Close']:.2f}", 'Signal Score': f"{int(last_row['Signal_Score'])}/5",
-                                'Recommendation': last_row['Recommendation']
+                                'Ticker': ticker, 'Last Price': f"{last_row['Close']:.2f}",
+                                'Signal Score': f"{int(last_row['Signal_Score'])}/5",
+                                'RSI': f"{last_row['RSI_14']:.2f}", 'Recommendation': last_row['Recommendation']
                             })
                 except Exception: continue
             progress_bar.empty()
@@ -158,10 +172,10 @@ def run_app():
         st.header("My Portfolio Tracker")
         with st.form("add_holding_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
-            ticker, quantity, gav = c1.text_input("Ticker").upper(), c2.number_input("Quantity", 0.01, step=0.01, format="%.2f"), c3.number_input("GAV", 0.01, step=0.01, format="%.2f")
+            ticker, qty, gav = c1.text_input("Ticker").upper(), c2.number_input("Quantity", 0.01, format="%.2f"), c3.number_input("GAV", 0.01, format="%.2f")
             if st.form_submit_button("Add to Portfolio"):
-                if ticker and quantity > 0 and gav > 0:
-                    st.session_state.portfolio.append({"ticker": ticker, "quantity": quantity, "gav": gav})
+                if ticker and qty > 0 and gav > 0:
+                    st.session_state.portfolio.append({"ticker": ticker, "quantity": qty, "gav": gav})
                     st.success(f"Added {ticker}!")
         
         st.write("---")
