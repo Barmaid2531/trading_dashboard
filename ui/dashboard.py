@@ -275,23 +275,30 @@ def run_app():
                     st.warning(f"Removed {selected_ticker_wl}."), st.rerun()
 
     with tabs[4]: # Backtester
-        st.header("Strategy Backtester")
-        with st.form("backtest_form"):
-            c1, c2, c3 = st.columns(3)
-            ticker = c1.text_input("Ticker Symbol", "AAPL").upper()
-            start_date = c2.date_input("Start Date", pd.to_datetime("2023-01-01"))
-            end_date = c3.date_input("End Date", pd.to_datetime("2024-01-01"))
-            if st.form_submit_button("Run Backtest"):
-                with st.spinner(f"Running backtest for {ticker}..."):
-                    stats, plot = run_backtest(ticker, start_date, end_date)
-                if stats is not None:
-                    st.success("Backtest complete!")
-                    st.subheader("Performance Metrics")
-                    st.write(stats)
-                    st.subheader("Equity Curve & Trades")
-                    st.bokeh_chart(plot, use_container_width=True)
-                else:
-                    st.error("Could not fetch data or run backtest for the given ticker and date range.")
+            st.header("Strategy Backtester")
+            with st.form("backtest_form"):
+                c1, c2, c3 = st.columns(3)
+                ticker = c1.text_input("Ticker Symbol", "AAPL").upper()
+                start_date = c2.date_input("Start Date", pd.to_datetime("2023-01-01"))
+                end_date = c3.date_input("End Date", pd.to_datetime("2024-01-01"))
+                if st.form_submit_button("Run Backtest"):
+                    with st.spinner(f"Running backtest for {ticker}..."):
+                        try:
+                            # --- FIX: Wrap the call in a try...except block ---
+                            stats, plot = run_backtest(ticker, start_date, end_date)
+                            
+                            if stats is not None:
+                                st.success("Backtest complete!")
+                                st.subheader("Performance Metrics")
+                                st.write(stats)
+                                st.subheader("Equity Curve & Trades")
+                                st.bokeh_chart(plot, use_container_width=True)
+                            else:
+                                st.error("Could not fetch data for the given ticker and date range.")
+                        
+                        except ValueError as e:
+                            # Catch the error raised from backtest.py and display it
+                            st.error(e)
 
 if __name__ == "__main__":
     run_app()
