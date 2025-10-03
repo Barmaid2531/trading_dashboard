@@ -133,27 +133,33 @@ def run_app():
         pass # Placeholder for brevity
     
     with tabs[4]: # Backtester
-        st.header("Strategy Backtester")
-        with st.form("backtest_form"):
-            c1, c2, c3 = st.columns(3)
-            ticker = c1.text_input("Ticker Symbol", "AAPL").upper()
-            start_date = c2.date_input("Start Date", pd.to_datetime("2023-01-01"))
-            end_date = c3.date_input("End Date", pd.to_datetime("2024-01-01"))
-            if st.form_submit_button("Run Backtest"):
-                with st.spinner(f"Running backtest for {ticker}..."):
-                    try:
-                        stats, plot = run_backtest(ticker, start_date, end_date)
-                        if stats is not None:
-                            st.success("Backtest complete!")
-                            st.subheader("Performance Metrics")
-                            st.write(stats)
-                            st.subheader("Equity Curve & Trades")
-                            # --- FIX: Use st.plotly_chart to display the new figure ---
-                            st.plotly_chart(plot, use_container_width=True)
-                        else:
-                            st.error("Could not fetch data.")
-                    except ValueError as e:
-                        st.error(e)
+            st.header("Strategy Backtester")
+            with st.form("backtest_form"):
+                c1, c2, c3 = st.columns(3)
+                ticker = c1.text_input("Ticker Symbol", "AAPL").upper()
+                start_date = c2.date_input("Start Date", pd.to_datetime("2023-01-01"))
+                end_date = c3.date_input("End Date", pd.to_datetime("2024-01-01"))
+                if st.form_submit_button("Run Backtest"):
+                    with st.spinner(f"Running backtest for {ticker}..."):
+                        try:
+                            # Unpack three values now: stats, script, and div
+                            stats, script, div = run_backtest(ticker, start_date, end_date)
+                            
+                            if stats is not None:
+                                st.success("Backtest complete!")
+                                st.subheader("Performance Metrics")
+                                st.write(stats)
+                                st.subheader("Equity Curve & Trades")
+                                
+                                # --- FIX: Use st.html to render the Bokeh plot ---
+                                if script and div:
+                                    st.html(script + div, height=800, scrolling=True)
+                                else:
+                                    st.warning("Could not generate a plot for this backtest.")
+                            else:
+                                st.error("Could not fetch data.")
+                        except ValueError as e:
+                            st.error(e)
 
 if __name__ == "__main__":
     run_app()
