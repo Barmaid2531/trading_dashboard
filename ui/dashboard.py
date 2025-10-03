@@ -3,6 +3,7 @@ from plotly.subplots import make_subplots
 import json
 import streamlit.components.v1 as components
 import joblib
+import yfinance as yf
 
 # Use the yfinance fetcher
 from data.fetchers.yfinance_fetcher import fetch_daily_bars
