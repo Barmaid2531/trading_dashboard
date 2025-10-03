@@ -128,7 +128,7 @@ def run_app():
 
     st.title("Advanced Intraday Stock Analysis")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist","🧪 Backtester"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist","🧪 Backtester"])
 
     with tab1:
         st.header("Find Strong Buy Signals (OMXS30)")
