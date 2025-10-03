@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import streamlit.components.v1 as components
+import joblib # For loading ML model
+
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
@@ -19,12 +21,20 @@ def get_omxs30_tickers():
     ]
     return tickers
 
+@st.cache_resource
+def load_model():
+    """Loads the trained ML model from the /ml folder."""
+    try:
+        model = joblib.load("ml/xgb_model.joblib")
+        return model
+    except FileNotFoundError:
+        return None
+
 def plot_stock_chart(strategy_data, ticker_symbol):
     """Generates a high-resolution Plotly figure with a range slider and percentage change calculation."""
     if strategy_data is None or len(strategy_data) < 2:
         fig = go.Figure()
-        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data to Display Chart', xaxis_visible=False, yaxis_visible=False,
-                          annotations=[dict(text="No recent intraday data available.", xref="paper", yref="paper", showarrow=False, font=dict(size=16))])
+        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data to Display Chart', xaxis_visible=False, yaxis_visible=False)
         return fig
 
     start_price = strategy_data['Close'].iloc[0]
@@ -131,7 +141,7 @@ def run_app():
                     if not data.empty and len(data) > 1:
                         strategy_data = analyze_stock(data, ticker)
                         last_row = strategy_data.iloc[-1]
-                        if last_row['Signal_Score'] >= 3:
+                        if last_row['Signal_Score'] >= 4:
                             strong_buys.append({
                                 'Ticker': ticker, 'Last Price': f"{last_row['Close']:.2f}",
                                 'Signal Score': f"{int(last_row['Signal_Score'])}/5",
@@ -199,16 +209,14 @@ def run_app():
                 st.write("---")
                 
                 portfolio_df = pd.DataFrame(portfolio_data)
-
-                # --- FIX: The styling logic is corrected here ---
                 def style_table(df):
                     def color(val, sugg=False):
-                        if sugg: # Handle suggestion strings
+                        if sugg:
                             val_str = str(val)
                             if "Buy" in val_str: return 'color: green; font-weight: bold'
                             if "Sell" in val_str: return 'color: red; font-weight: bold'
                             return 'color: white'
-                        else: # Handle numeric P/L strings
+                        else:
                             try:
                                 num = float(str(val).replace('%',''))
                                 if num > 0: return 'color: green'
@@ -219,7 +227,6 @@ def run_app():
                     
                     return df.style.applymap(lambda v: color(v, sugg=True), subset=['Suggestion'])\
                                      .applymap(lambda v: color(v, sugg=False), subset=['P/L', 'P/L %'])
-                
                 st.dataframe(style_table(portfolio_df), use_container_width=True)
 
                 st.write("---")
@@ -308,8 +315,7 @@ def run_app():
                             if script and div:
                                 components.html(script + div, height=800, scrolling=True)
                             else:
-                
-                                st.warning("Could not generate a plot for this backtest.")
+                                st.warning("Could not generate a plot. This usually means no trades were made.")
                         else:
                             st.error("Could not fetch data.")
                     except ValueError as e:
