@@ -1,4 +1,3 @@
-# ui/dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -152,12 +151,20 @@ def run_app():
 
     with tab2:
         st.header("Deep-Dive on a Single Stock")
+        st.write("Select a stock from the OMXS30 list OR enter any other ticker below.")
+        
         omxs30_tickers = get_omxs30_tickers()
-        ticker_to_analyze = st.selectbox(
-            "Select from OMXS30 or type any ticker:",
-            options=[""] + omxs30_tickers,
-            help="You can select from the list or start typing a custom ticker."
+        selected_ticker = st.selectbox(
+            "OMXS30 Stocks", 
+            options=[""] + omxs30_tickers
         )
+        
+        custom_ticker = st.text_input(
+            "Enter Custom Ticker (e.g., GOOGL, TSLA, BTC-USD)"
+        ).upper()
+        
+        ticker_to_analyze = custom_ticker if custom_ticker else selected_ticker
+
         if ticker_to_analyze:
             display_detailed_view(ticker_to_analyze)
 
@@ -225,10 +232,8 @@ def run_app():
                 portfolio_tickers = [h['ticker'] for h in st.session_state.portfolio]
                 selected_ticker = st.selectbox("Select a holding for details or to manage:", options=[""] + portfolio_tickers)
                 if selected_ticker:
-                    # Detailed View
                     display_detailed_view(selected_ticker)
                     
-                    # Management Section
                     st.write("---")
                     st.write(f"Editing **{selected_ticker}**")
                     selected_index = portfolio_tickers.index(selected_ticker)
@@ -288,10 +293,19 @@ def run_app():
                         return f'color: {color}; font-weight: bold'
                     return df.style.applymap(color_signal, subset=['Signal'])
                 st.dataframe(style_watchlist(watchlist_df), use_container_width=True)
+                
             st.write("---")
-            st.subheader("Manage Watchlist")
-            ticker_to_remove = st.selectbox("Select a stock to remove:", options=[""] + st.session_state.watchlist)
-            if st.button("Remove from Watchlist") and ticker_to_remove:
-                st.session_state.watchlist.remove(ticker_to_remove)
-                st.warning(f"Removed {ticker_to_remove} from your watchlist.")
-                st.rerun()
+            st.subheader("Analyze or Manage Watchlist")
+            selected_ticker_watchlist = st.selectbox(
+                "Select a stock to analyze or remove:", 
+                options=[""] + st.session_state.watchlist
+            )
+            if selected_ticker_watchlist:
+                display_detailed_view(selected_ticker_watchlist)
+                if st.button("❌ Remove from Watchlist"):
+                    st.session_state.watchlist.remove(selected_ticker_watchlist)
+                    st.warning(f"Removed {selected_ticker_watchlist} from your watchlist.")
+                    st.rerun()
+
+if __name__ == "__main__":
+    run_app()
