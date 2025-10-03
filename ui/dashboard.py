@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots # <-- 1. ADD THIS NEW IMPORT
 import json
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.advanced_analyzer import analyze_stock
-from backtest import run_backtest
+from strategies.backtest import run_backtest
 from bokeh.plotting import figure # Add Bokeh for plotting
 
 @st.cache_data
