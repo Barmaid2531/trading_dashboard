@@ -4,7 +4,7 @@ import pandas as pd
 from strategies.advanced_analyzer import analyze_stock
 
 class AdvancedStrategy(Strategy):
-    ticker = None  # Add a placeholder for the ticker
+    ticker = None
 
     def init(self):
         df = pd.DataFrame({
@@ -12,7 +12,6 @@ class AdvancedStrategy(Strategy):
             'Low': self.data.Low, 'Close': self.data.Close,
             'Volume': self.data.Volume
         })
-        # Pass the ticker to the analyzer
         self.signals = self.I(lambda: analyze_stock(df, self.ticker)['Signal_Score'], name="Signal_Score")
 
     def next(self):
@@ -31,15 +30,26 @@ def run_backtest(ticker, start_date, end_date):
     if data.empty:
         return None, None
         
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(0)
+    # --- NEW ROBUST FIX: Force column names to match what backtesting.py expects ---
+    # This handles all inconsistencies from yfinance (e.g., 'Adj Close', lowercase, etc.)
+    expected_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
     
-    data.rename(columns={
-        "open": "Open", "high": "High", "low": "Low", 
-        "close": "Close", "volume": "Volume"
-    }, inplace=True)
+    # Ensure we don't try to rename more columns than we have
+    num_cols_to_rename = min(len(data.columns), len(expected_cols))
     
+    # Create a mapping from the actual column names to the expected ones
+    rename_map = {data.columns[i]: expected_cols[i] for i in range(num_cols_to_rename)}
+    
+    data.rename(columns=rename_map, inplace=True)
+    # --------------------------------------------------------------------------
+    
+    # Check if all required columns are present after renaming
+    required_cols = {'Open', 'High', 'Low', 'Close'}
+    if not required_cols.issubset(data.columns):
+        st.error(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
+        return None, None
+
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
-    stats, plot = bt.run(ticker=ticker) # Pass ticker to the run method
+    stats, plot = bt.run(ticker=ticker)
     
     return stats, plot
