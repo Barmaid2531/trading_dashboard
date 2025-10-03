@@ -44,9 +44,9 @@ def run_backtest(ticker, start_date, end_date):
 
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
     
-    # --- FIX: Separate the .run() and .plot() calls ---
     stats = bt.run(ticker=ticker)
-    plot = bt.plot()
-    # ----------------------------------------------------
+    
+    # --- FIX: Generate a Plotly figure instead of a Bokeh one ---
+    plot = bt.plot(plot_pl=True)
     
     return stats, plot
