@@ -9,23 +9,6 @@ def get_finnhub_client():
     api_key = st.secrets["finnhub"]["api_key"]
     return finnhub.Client(api_key=api_key)
 
-@st.cache_data(ttl="1d")
-def get_nordic_assets():
-    """Fetches a list of all symbols from Nordic markets using Finnhub."""
-    client = get_finnhub_client()
-    exchanges = ['ST', 'CO', 'HE'] # Stockholm, Copenhagen, Helsinki
-    all_assets = []
-    
-    for ex in exchanges:
-        symbols = client.stock_symbols(ex)
-        for s in symbols:
-            if s['mic'] and s['displaySymbol']: # Ensure essential data exists
-                s['exchange'] = ex
-                all_assets.append(s)
-            
-    asset_list = [{'symbol': a['displaySymbol'], 'name': a['description'], 'exchange': a['exchange']} for a in all_assets]
-    return asset_list
-
 def fetch_daily_bars(ticker, days=365):
     """Fetches daily OHLCV bars for a given ticker using Finnhub."""
     client = get_finnhub_client()
