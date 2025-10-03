@@ -199,12 +199,27 @@ def run_app():
                 st.write("---")
                 
                 portfolio_df = pd.DataFrame(portfolio_data)
+
+                # --- FIX: The styling logic is corrected here ---
                 def style_table(df):
                     def color(val, sugg=False):
-                        num = float(str(val).replace('%',''))
-                        if sugg: return f'color: {"green" if "Buy" in val else "red" if "Sell" in val else "white"}'
-                        return f'color: {"green" if num > 0 else "red" if num < 0 else "white"}'
-                    return df.style.applymap(color, subset=['P/L', 'P/L %']).applymap(lambda v: color(v, sugg=True), subset=['Suggestion'])
+                        if sugg: # Handle suggestion strings
+                            val_str = str(val)
+                            if "Buy" in val_str: return 'color: green; font-weight: bold'
+                            if "Sell" in val_str: return 'color: red; font-weight: bold'
+                            return 'color: white'
+                        else: # Handle numeric P/L strings
+                            try:
+                                num = float(str(val).replace('%',''))
+                                if num > 0: return 'color: green'
+                                if num < 0: return 'color: red'
+                                return 'color: white'
+                            except (ValueError, TypeError):
+                                return ''
+                    
+                    return df.style.applymap(lambda v: color(v, sugg=True), subset=['Suggestion'])\
+                                     .applymap(lambda v: color(v, sugg=False), subset=['P/L', 'P/L %'])
+                
                 st.dataframe(style_table(portfolio_df), use_container_width=True)
 
                 st.write("---")
@@ -293,6 +308,7 @@ def run_app():
                             if script and div:
                                 components.html(script + div, height=800, scrolling=True)
                             else:
+                
                                 st.warning("Could not generate a plot for this backtest.")
                         else:
                             st.error("Could not fetch data.")
