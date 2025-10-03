@@ -25,7 +25,6 @@ def run_backtest(ticker, start_date, end_date):
     """
     Runs a backtest for a given ticker and date range.
     """
-    # --- FIX: Use the more robust .history() method instead of yf.download() ---
     data = yf.Ticker(ticker).history(start=start_date, end=end_date, interval="1d")
     
     if data.empty:
@@ -34,7 +33,6 @@ def run_backtest(ticker, start_date, end_date):
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(0)
     
-    # Force column names to match what backtesting.py expects
     expected_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
     num_cols_to_rename = min(len(data.columns), len(expected_cols))
     rename_map = {data.columns[i]: expected_cols[i] for i in range(num_cols_to_rename)}
@@ -45,6 +43,10 @@ def run_backtest(ticker, start_date, end_date):
         raise ValueError(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
 
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
-    stats, plot = bt.run(ticker=ticker)
+    
+    # --- FIX: Separate the .run() and .plot() calls ---
+    stats = bt.run(ticker=ticker)
+    plot = bt.plot()
+    # ----------------------------------------------------
     
     return stats, plot
