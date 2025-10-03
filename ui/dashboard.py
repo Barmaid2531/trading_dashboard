@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots # <-- 1. ADD THIS NEW IMPORT
 import json
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.advanced_analyzer import analyze_stock
@@ -34,7 +35,10 @@ def plot_stock_chart(strategy_data, ticker_symbol):
     change_color = "green" if percent_change >= 0 else "red"
     chart_title = f"{ticker_symbol} Advanced Analysis | Period Change: <span style='color:{change_color};'>{percent_change:.2f}%</span>"
 
-    fig = go.Figure(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
+    # --- 2. THE FIX: Use make_subplots() instead of go.Figure() ---
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.05, 
+                        row_heights=[0.6, 0.2, 0.2])
 
     fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['Close'], name='Close Price', line=dict(color='skyblue')), row=1, col=1)
     fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['SMA_10'], name='Short SMA', line=dict(color='orange')), row=1, col=1)
@@ -108,7 +112,7 @@ def run_app():
                 st.session_state.portfolio = data.get('portfolio', [])
                 st.session_state.watchlist = data.get('watchlist', [])
                 st.success("Data imported successfully!")
-                st.rerun() # <-- FIX: Force a refresh after loading data
+                st.rerun()
             except Exception as e:
                 st.error(f"Error importing file: {e}")
 
