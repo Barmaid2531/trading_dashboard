@@ -1,12 +1,9 @@
 import pandas as pd
 import pandas_ta as ta
-from data.fetchers.finnhub_fetcher import fetch_daily_bars
+from data.fetchers.yfinance_fetcher import fetch_daily_bars
 
 def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """
-    Performs an advanced analysis on stock data using multiple indicators,
-    including a multi-timeframe check.
-    """
+    """Performs an advanced analysis on stock data using multiple indicators."""
     if data.empty:
         return data
 
@@ -16,20 +13,14 @@ def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
     data.ta.rsi(length=14, append=True)
     data.ta.obv(append=True)
     
-    is_daily_uptrend = False
-    try:
-        daily_data = fetch_daily_bars(ticker, days=100)
-        if not daily_data.empty:
-            daily_data['SMA_50_daily'] = daily_data['Close'].ta.sma(50)
-            if not daily_data['SMA_50_daily'].empty and not pd.isna(daily_data['SMA_50_daily'].iloc[-1]):
-                is_daily_uptrend = data['Close'].iloc[-1] > daily_data['SMA_50_daily'].iloc[-1]
-    except Exception:
-        is_daily_uptrend = False
+    # For yfinance, the daily data is already what we're analyzing, so the
+    # multi-timeframe check is implicitly handled.
+    is_daily_uptrend = data['SMA_10'].iloc[-1] > data['SMA_50'].iloc[-1]
 
     data['Signal_Score'] = 0
     data.loc[data['SMA_10'] > data['SMA_50'], 'Signal_Score'] += 1
     data.loc[data['MACDh_12_26_9'] > 0, 'Signal_Score'] += 1
-    data.loc[data['RSI_14'] < 50, 'Signal_Score'] += 1
+    data.loc[data['RSI_14'] < 60, 'Signal_Score'] += 1 # Adjusted for daily trends
     data['OBV_SMA_10'] = data['OBV'].rolling(window=10).mean()
     data.loc[data['OBV'] > data['OBV_SMA_10'], 'Signal_Score'] += 1
     if is_daily_uptrend:
