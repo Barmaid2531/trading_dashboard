@@ -5,6 +5,8 @@ from plotly.subplots import make_subplots # <-- 1. ADD THIS NEW IMPORT
 import json
 from data.fetchers.yahoo_fetcher import fetch
 from strategies.advanced_analyzer import analyze_stock
+from backtest import run_backtest
+from bokeh.plotting import figure # Add Bokeh for plotting
 
 @st.cache_data
 def get_omxs30_tickers():
@@ -126,7 +128,7 @@ def run_app():
 
     st.title("Advanced Intraday Stock Analysis")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist","🧪 Backtester"])
 
     with tab1:
         st.header("Find Strong Buy Signals (OMXS30)")
@@ -280,3 +282,33 @@ def run_app():
                 if st.button("Remove from Watchlist"):
                     st.session_state.watchlist.remove(selected_ticker_wl)
                     st.warning(f"Removed {selected_ticker_wl}."), st.rerun()
+    with tab5:
+        st.header("Strategy Backtester")
+        st.info("Test the 'Strong Buy' (Signal Score >= 3) strategy on historical daily data.")
+    
+        with st.form("backtest_form"):
+            col1, col2, col3 = st.columns(3)
+            ticker = col1.text_input("Ticker Symbol", "AAPL").upper()
+            start_date = col2.date_input("Start Date", pd.to_datetime("2022-01-01"))
+            end_date = col3.date_input("End Date", pd.to_datetime("2023-01-01"))
+            
+            submitted = st.form_submit_button("Run Backtest")
+    
+        if submitted:
+            with st.spinner(f"Running backtest for {ticker}..."):
+                stats, plot = run_backtest(ticker, start_date, end_date)
+            
+            if stats is not None:
+                st.success("Backtest complete!")
+                
+                st.subheader("Performance Metrics")
+                st.write(stats) # Displays the main performance stats
+                
+                st.subheader("Equity Curve & Trades")
+                st.bokeh_chart(plot, use_container_width=True)
+                
+                st.subheader("Full Stats")
+                st.write(stats._strategy) # Displays more detailed stats
+            else:
+                st.error("Could not fetch data for the given ticker and date range.")
+
