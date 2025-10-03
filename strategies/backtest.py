@@ -2,6 +2,7 @@ from backtesting import Backtest, Strategy
 import yfinance as yf
 import pandas as pd
 from strategies.advanced_analyzer import analyze_stock
+from bokeh.embed import components # <-- Add this import
 
 class AdvancedStrategy(Strategy):
     ticker = None
@@ -23,12 +24,12 @@ class AdvancedStrategy(Strategy):
 
 def run_backtest(ticker, start_date, end_date):
     """
-    Runs a backtest for a given ticker and date range.
+    Runs a backtest and returns stats and plot components.
     """
     data = yf.Ticker(ticker).history(start=start_date, end=end_date, interval="1d")
     
     if data.empty:
-        return None, None
+        return None, None, None
         
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(0)
@@ -43,10 +44,13 @@ def run_backtest(ticker, start_date, end_date):
         raise ValueError(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
 
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
-    
     stats = bt.run(ticker=ticker)
     
-    # --- FIX: Generate a Plotly figure instead of a Bokeh one ---
-    plot = bt.plot(plot_pl=True)
+    # --- FIX: Generate the default Bokeh plot and get its HTML components ---
+    plot = bt.plot()
     
-    return stats, plot
+    if plot:
+        script, div = components(plot)
+        return stats, script, div
+    else:
+        return stats, None, None
