@@ -132,14 +132,15 @@ def run_app():
     tabs = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist", "🧪 Backtester"])
 
     with tabs[0]: # Screener
-        st.header("Nordic Index Screener")
+        st.header("Find Strong Buy Signals (Nordic Markets)")
+        
         nordic_indices = get_nordic_indices()
         selected_index = st.selectbox("Select an Index to Scan:", options=list(nordic_indices.keys()))
         
         if st.button(f"Scan {selected_index} for Strong Buy Signals", type="primary"):
             tickers_to_scan = nordic_indices[selected_index]
             strong_buys = []
-            progress_bar = st.progress(0)
+            progress_bar = st.progress(0, text="Starting analysis...")
             for i, ticker in enumerate(tickers_to_scan):
                 progress_bar.progress((i + 1) / len(tickers_to_scan), f"Scanning {ticker}...")
                 try:
@@ -157,10 +158,18 @@ def run_app():
             progress_bar.empty()
             st.session_state.recommendations = pd.DataFrame(strong_buys)
 
+        # --- FIX: Check if the DataFrame is empty before sorting ---
         if 'recommendations' in st.session_state:
             df = st.session_state.recommendations
             st.metric("Strong Buy Signals Found", len(df))
-            st.dataframe(df.sort_values(by='Signal Score', ascending=False), use_container_width=True)
+            
+            if not df.empty:
+                # This code now only runs if there are results
+                st.success("Displaying stocks with the strongest buy signals.")
+                st.dataframe(df.sort_values(by='Signal Score', ascending=False), use_container_width=True)
+            else:
+                # Display a message if no results were found
+                st.info("Analysis complete. No stocks currently meet the 'Strong Buy' criteria.")
 
     with tabs[1]: # Individual Analysis
         st.header("Deep-Dive on a Single Stock")
