@@ -111,6 +111,69 @@ def run_app():
 
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist"])
 
+    def plot_stock_chart(strategy_data, ticker_symbol):
+    """
+    Generates a high-resolution Plotly figure with a range slider 
+    and percentage change calculation.
+    """
+    # --- 1. Calculate Percentage Change for the visible period ---
+    start_price = strategy_data['Close'].iloc[0]
+    end_price = strategy_data['Close'].iloc[-1]
+    percent_change = ((end_price / start_price) - 1) * 100
+    change_color = "green" if percent_change >= 0 else "red"
+    
+    # Format the title to include the calculated change
+    chart_title = f"{ticker_symbol} Advanced Analysis | Period Change: <span style='color:{change_color};'>{percent_change:.2f}%</span>"
+
+    # --- 2. Create the chart with subplots ---
+    fig = go.Figure(rows=3, cols=1, shared_xaxes=True, 
+                    vertical_spacing=0.05, 
+                    row_heights=[0.6, 0.2, 0.2])
+
+    # --- Plot 1: Price and SMAs ---
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['Close'], name='Close Price', line=dict(color='skyblue')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['SMA_10'], name='Short SMA', line=dict(color='orange')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['SMA_50'], name='Long SMA', line=dict(color='purple')), row=1, col=1)
+    
+    # --- Plot 2: MACD ---
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['MACD_12_26_9'], name='MACD', line=dict(color='blue')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['MACDs_12_26_9'], name='Signal Line', line=dict(color='red')), row=2, col=1)
+    fig.add_trace(go.Bar(x=strategy_data.index, y=strategy_data['MACDh_12_26_9'], name='Histogram', marker_color='grey'), row=2, col=1)
+
+    # --- Plot 3: RSI ---
+    fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data['RSI_14'], name='RSI', line=dict(color='green')), row=3, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="blue", row=3, col=1)
+
+    # --- 3. Update Layout and Add Range Slider ---
+    fig.update_layout(
+        title_text=chart_title,
+        height=800,
+        legend_title='Legend',
+        showlegend=True
+    )
+    
+    # Update all y-axes
+    fig.update_yaxes(title_text="Price (SEK)", row=1, col=1)
+    fig.update_yaxes(title_text="MACD", row=2, col=1)
+    fig.update_yaxes(title_text="RSI", row=3, col=1)
+    
+    # Add the range slider to the primary x-axis
+    fig.update_xaxes(
+        rangeslider_visible=True,
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1d", step="day", stepmode="backward"),
+                dict(count=5, label="5d", step="day", stepmode="backward"),
+                dict(count=1, label="1m", step="month", stepmode="backward"),
+                dict(step="all")
+            ])
+        ),
+        row=1, col=1
+    )
+    
+    return fig
+
     with tab1:
         st.header("Find Strong Buy Signals (OMXS30)")
         if st.button("Analyze All OMXS30 Stocks", type="primary"):
