@@ -7,6 +7,7 @@ from data.fetchers.yahoo_fetcher import fetch
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
 from bokeh.plotting import figure
+import yfinance as yf
 
 @st.cache_data
 def get_omxs30_tickers():
