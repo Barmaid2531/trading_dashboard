@@ -10,3 +10,6 @@ pyyaml
 requests
 streamlit
 yfinance
+scikit-learn
+xgboost
+joblib
