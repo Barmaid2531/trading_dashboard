@@ -1,52 +1,34 @@
 from backtesting import Backtest, Strategy
-import yfinance as yf
 import pandas as pd
 from strategies.advanced_analyzer import analyze_stock
-from bokeh.embed import components # <-- Add this import
+from data.fetchers.finnhub_fetcher import fetch_daily_bars # Use our new fetcher
+from bokeh.embed import components
 
 class AdvancedStrategy(Strategy):
     ticker = None
-
     def init(self):
-        df = pd.DataFrame({
-            'Open': self.data.Open, 'High': self.data.High,
-            'Low': self.data.Low, 'Close': self.data.Close,
-            'Volume': self.data.Volume
-        })
+        df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
         self.signals = self.I(lambda: analyze_stock(df, self.ticker)['Signal_Score'], name="Signal_Score")
-
     def next(self):
-        if self.signals[-1] >= 3:
-            if not self.position:
-                self.buy()
-        elif self.signals[-1] <= 1:
+        if self.signals[-1] >= 4: # Use a higher threshold for daily data
+            if not self.position: self.buy()
+        elif self.signals[-1] <= 2:
             self.position.close()
 
 def run_backtest(ticker, start_date, end_date):
-    """
-    Runs a backtest and returns stats and plot components.
-    """
-    data = yf.Ticker(ticker).history(start=start_date, end=end_date, interval="1d")
+    """Runs a backtest for a given ticker and date range using Finnhub data."""
+    # Finnhub fetcher uses days, so we calculate the difference
+    days = (end_date - start_date).days
+    data = fetch_daily_bars(ticker, days=days)
     
-    if data.empty:
+    # Filter data to the exact date range
+    data = data[(data.index >= pd.to_datetime(start_date)) & (data.index <= pd.to_datetime(end_date))]
+    
+    if data.empty or len(data) < 50: # Need enough data for indicators
         return None, None, None
-        
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(0)
-    
-    expected_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-    num_cols_to_rename = min(len(data.columns), len(expected_cols))
-    rename_map = {data.columns[i]: expected_cols[i] for i in range(num_cols_to_rename)}
-    data.rename(columns=rename_map, inplace=True)
-    
-    required_cols = {'Open', 'High', 'Low', 'Close'}
-    if not required_cols.issubset(data.columns):
-        raise ValueError(f"Downloaded data for {ticker} is missing required columns. Found: {list(data.columns)}")
 
     bt = Backtest(data, AdvancedStrategy, cash=100000, commission=.002)
     stats = bt.run(ticker=ticker)
-    
-    # --- FIX: Generate the default Bokeh plot and get its HTML components ---
     plot = bt.plot()
     
     if plot:
