@@ -68,13 +68,18 @@ def display_detailed_view(ticker):
             last_row = strategy_data.iloc[-1]
             st.metric("Last Price", f"{last_row['Close']:.2f}")
             st.metric("RSI (14)", f"{last_row['RSI_14']:.2f}")
-            st.metric("Signal Score", f"{int(last_row['Signal_Score'])}/5")
+            st.metric("Signal Score", f"{int(last_row['Signal_Score'])}/6") # Now out of 6
             st.info(f"Recommendation: **{last_row['Recommendation']}**")
-            
+
+            # --- NEW: Display Relative Strength Metric ---
+            if 'Relative_Strength' in last_row and pd.notna(last_row['Relative_Strength']):
+                rs_delta = f"{last_row['Relative_Strength']:.2%}"
+                st.metric("20-Day Relative Strength", value="Outperforming" if last_row['Relative_Strength'] > 0 else "Underperforming", delta=rs_delta)
+
             st.write("---")
             st.subheader("Risk Levels")
             st.metric("Stop-Loss", f"{last_row['Stop_Loss']:.2f}", f"-{last_row['Close'] - last_row['Stop_Loss']:.2f} (Risk)", delta_color="inverse")
-            st.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}", f"+{last_row['Take_Profit'] - last_row['Close']:.2f} (Reward)", delta_color="normal")
+            st.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}", f"+{last_row['Take_Profit'] - last_row['Close']:.2f} (Reward)")
             st.caption("Based on a 2:1 Reward/Risk ratio using ATR.")
 
         with col2:
