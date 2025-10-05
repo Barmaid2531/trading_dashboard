@@ -1,11 +1,9 @@
 import pandas as pd
 import pandas_ta as ta
-from data.fetchers.master_fetcher import fetch_data # Use the master fetcher
+from data.fetchers.yfinance_fetcher import fetch_daily_bars
 
 def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """
-    Performs an advanced analysis on stock data using multiple indicators.
-    """
+    """Performs an advanced analysis on stock data using multiple indicators."""
     if data.empty:
         return data
 
@@ -14,7 +12,8 @@ def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
     data.ta.macd(fast=12, slow=26, signal=9, append=True)
     data.ta.rsi(length=14, append=True)
     data.ta.obv(append=True)
-    
+    data.ta.atr(length=14, append=True)
+
     is_daily_uptrend = data['SMA_10'].iloc[-1] > data['SMA_50'].iloc[-1]
 
     data['Signal_Score'] = 0
@@ -31,5 +30,10 @@ def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
         elif score >= 2: return "Buy"
         else: return "Neutral/Sell"
     data['Recommendation'] = data['Signal_Score'].apply(get_recommendation)
+
+    atr_multiplier_sl = 2.0
+    atr_multiplier_tp = 4.0
+    data['Stop_Loss'] = data['Close'] - (data['ATRr_14'] * atr_multiplier_sl)
+    data['Take_Profit'] = data['Close'] + (data['ATRr_14'] * atr_multiplier_tp)
     
     return data
