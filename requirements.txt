@@ -1,10 +1,7 @@
 streamlit
 pandas
+finnhub-python
 yfinance
 pandas-ta
 backtesting
 bokeh
-scikit-learn
-xgboost
-joblib
-plotly
