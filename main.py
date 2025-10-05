@@ -1,5 +1,4 @@
-# Import the function from your dashboard file
-# main.py
+import streamlit as st
 from ui.dashboard import run_app
 
 if __name__ == "__main__":
