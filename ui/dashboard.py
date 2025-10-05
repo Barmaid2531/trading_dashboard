@@ -6,7 +6,7 @@ import json
 import streamlit.components.v1 as components
 import joblib
 
-from data.fetchers.yfinance_fetcher import fetch_daily_bars
+from data.fetchers.master_fetcher import fetch_data
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
 
@@ -38,17 +38,27 @@ def get_nordic_indices():
     }
     return indices
 
+@st.cache_resource
+def load_model():
+    """Loads the trained ML model from the /ml folder."""
+    try:
+        model = joblib.load("ml/xgb_model.joblib")
+        return model
+    except FileNotFoundError:
+        return None
+
 def plot_stock_chart(strategy_data, ticker_symbol):
+    """Generates a high-resolution Plotly figure with a range slider and percentage change calculation."""
     if strategy_data is None or len(strategy_data) < 2:
         fig = go.Figure()
-        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data', xaxis_visible=False, yaxis_visible=False)
+        fig.update_layout(title=f'{ticker_symbol} - Not Enough Data to Display Chart', xaxis_visible=False, yaxis_visible=False)
         return fig
-    
+
     start_price = strategy_data['Close'].iloc[0]
     end_price = strategy_data['Close'].iloc[-1]
     percent_change = ((end_price / start_price) - 1) * 100 if start_price != 0 else 0
     change_color = "green" if percent_change >= 0 else "red"
-    chart_title = f"{ticker_symbol} Analysis | Change: <span style='color:{change_color};'>{percent_change:.2f}%</span>"
+    chart_title = f"{ticker_symbol} Advanced Analysis | Period Change: <span style='color:{change_color};'>{percent_change:.2f}%</span>"
 
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
 
@@ -70,12 +80,13 @@ def plot_stock_chart(strategy_data, ticker_symbol):
     return fig
 
 def display_detailed_view(ticker):
+    """Fetches, analyzes, and displays the detailed view for a single stock."""
     try:
         with st.spinner(f"Fetching data for {ticker}..."):
-            stock_data = fetch_daily_bars(ticker)
+            stock_data = fetch_data(ticker)
         
         if stock_data.empty:
-            st.warning("No data found for this ticker.")
+            st.warning("No data found for this ticker from any available source.")
             return
 
         strategy_data = analyze_stock(stock_data, ticker)
@@ -87,8 +98,10 @@ def display_detailed_view(ticker):
             st.metric("Last Price", f"{last_row['Close']:.2f}")
             st.metric("RSI (14)", f"{last_row['RSI_14']:.2f}")
             st.metric("MACD Hist", f"{last_row['MACDh_12_26_9']:.2f}")
-            st.metric("Signal Score", f"{int(last_row['Signal_Score'])}/5")
+            st.metric("Signal Score", f"{int(last_row['Signal_Score'])}/5", help="Based on SMA, MACD, RSI, OBV, and Daily Trend.")
             st.info(f"Recommendation: **{last_row['Recommendation']}**")
+            if 'Source' in strategy_data.columns:
+                st.caption(f"Data Source: {strategy_data['Source'].iloc[-1]}")
 
         with col2:
             fig = plot_stock_chart(strategy_data, ticker)
@@ -140,7 +153,7 @@ def run_app():
             for i, ticker in enumerate(tickers_to_scan):
                 progress_bar.progress((i + 1) / len(tickers_to_scan), f"Scanning {ticker}...")
                 try:
-                    data = fetch_daily_bars(ticker, period="1y")
+                    data = fetch_data(ticker, days=100)
                     if not data.empty and len(data) > 50:
                         strategy_data = analyze_stock(data, ticker)
                         last_row = strategy_data.iloc[-1]
@@ -178,12 +191,15 @@ def run_app():
                     st.session_state.portfolio.append({"ticker": ticker, "quantity": qty, "gav": gav})
                     st.success(f"Added {ticker}!")
         
-        if st.session_state.portfolio:
+        st.write("---")
+        if not st.session_state.portfolio:
+            st.info("Your portfolio is empty. Add a stock or import a data file from the sidebar.")
+        else:
             portfolio_data, total_value, total_investment = [], 0, 0
             with st.spinner("Updating portfolio..."):
                 for holding in st.session_state.portfolio:
                     try:
-                        data = fetch_daily_bars(holding["ticker"])
+                        data = fetch_data(holding["ticker"])
                         if data.empty: continue
                         strategy_data = analyze_stock(data, holding["ticker"])
                         last_row = strategy_data.iloc[-1]
@@ -216,7 +232,7 @@ def run_app():
                 st.write("---")
                 st.subheader("Manage & Analyze Portfolio")
                 portfolio_tickers = [h['ticker'] for h in st.session_state.portfolio]
-                selected_ticker = st.selectbox("Select a holding:", [""] + portfolio_tickers, key="portfolio_select")
+                selected_ticker = st.selectbox("Select a holding for details or to manage:", [""] + portfolio_tickers, key="portfolio_select")
                 if selected_ticker:
                     display_detailed_view(selected_ticker)
                     st.write("---")
@@ -228,13 +244,9 @@ def run_app():
                     new_gav = c2.number_input("New GAV", value=holding_to_edit['gav'], key=f"gav_{selected_ticker}")
                     c1, c2 = st.columns([1, 1])
                     if c1.button("Update", key=f"up_{selected_ticker}"):
-                        st.session_state.portfolio[idx] = {"ticker": selected_ticker, "quantity": new_qty, "gav": new_gav}
-                        st.success(f"Updated {selected_ticker}!")
-                        st.rerun()
+                        st.session_state.portfolio[idx] = {"ticker": selected_ticker, "quantity": new_qty, "gav": new_gav}; st.success(f"Updated {selected_ticker}!"); st.rerun()
                     if c2.button("Delete", key=f"del_{selected_ticker}"):
-                        st.session_state.portfolio.pop(idx)
-                        st.warning(f"Deleted {selected_ticker}.")
-                        st.rerun()
+                        st.session_state.portfolio.pop(idx); st.warning(f"Deleted {selected_ticker}."); st.rerun()
 
     with tabs[3]:
         st.header("My Stock Watchlist")
@@ -242,8 +254,7 @@ def run_app():
             ticker_to_watch = st.text_input("Enter Ticker Symbol").upper()
             if st.form_submit_button("Add to Watchlist"):
                 if ticker_to_watch and ticker_to_watch not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(ticker_to_watch)
-                    st.success(f"Added {ticker_to_watch}!")
+                    st.session_state.watchlist.append(ticker_to_watch); st.success(f"Added {ticker_to_watch}!")
                 else: st.warning(f"{ticker_to_watch} is invalid or already on the list.")
         
         if st.session_state.watchlist:
@@ -251,7 +262,7 @@ def run_app():
             with st.spinner("Updating watchlist..."):
                 for ticker in st.session_state.watchlist:
                     try:
-                        data = fetch_daily_bars(ticker, period="1y")
+                        data = fetch_data(ticker, days=100)
                         if data.empty: continue
                         strategy_data = analyze_stock(data, ticker)
                         last_row = strategy_data.iloc[-1]
@@ -273,9 +284,7 @@ def run_app():
             if selected_ticker_wl:
                 display_detailed_view(selected_ticker_wl)
                 if st.button("Remove from Watchlist"):
-                    st.session_state.watchlist.remove(selected_ticker_wl)
-                    st.warning(f"Removed {selected_ticker_wl}.")
-                    st.rerun()
+                    st.session_state.watchlist.remove(selected_ticker_wl); st.warning(f"Removed {selected_ticker_wl}."); st.rerun()
 
     with tabs[4]:
         st.header("Strategy Backtester")
@@ -285,19 +294,14 @@ def run_app():
             if st.form_submit_button("Run Backtest"):
                 with st.spinner(f"Running backtest..."):
                     try:
-                        stats, script, div = run_backtest(ticker, start_date, end_date)
+                        stats, script, div = run_backtest(ticker, start_date.date(), end_date.date())
                         if stats is not None:
-                            st.success("Backtest complete!")
-                            st.write(stats)
+                            st.success("Backtest complete!"); st.write(stats)
                             st.subheader("Equity Curve & Trades")
-                            if script and div: 
-                                components.html(script + div, height=800, scrolling=True)
-                            else: 
-                                st.warning("No plot generated (no trades made).")
-                        else: 
-                            st.error("Could not fetch data.")
-                    except ValueError as e: 
-                        st.error(e)
+                            if script and div: components.html(script + div, height=800, scrolling=True)
+                            else: st.warning("No plot generated (no trades made).")
+                        else: st.error("Could not fetch data.")
+                    except ValueError as e: st.error(e)
 
 if __name__ == "__main__":
     run_app()
