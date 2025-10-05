@@ -5,11 +5,10 @@ from datetime import datetime, timedelta
 
 @st.cache_resource
 def get_finnhub_client():
-    """Initializes the Finnhub client using the API key from secrets."""
     api_key = st.secrets["finnhub"]["api_key"]
     return finnhub.Client(api_key=api_key)
 
-def fetch_daily_bars(ticker, days=365):
+def fetch_daily_bars_finnhub(ticker, days=365, **kwargs):
     """Fetches daily OHLCV bars for a given ticker using Finnhub."""
     client = get_finnhub_client()
     end_date = datetime.now()
