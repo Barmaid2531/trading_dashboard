@@ -1,9 +1,11 @@
 import pandas as pd
 import pandas_ta as ta
-from data.fetchers.yfinance_fetcher import fetch_daily_bars
+from data.fetchers.master_fetcher import fetch_data # Use the master fetcher
 
 def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """Performs an advanced analysis on stock data using multiple indicators."""
+    """
+    Performs an advanced analysis on stock data using multiple indicators.
+    """
     if data.empty:
         return data
 
@@ -13,14 +15,12 @@ def analyze_stock(data: pd.DataFrame, ticker: str) -> pd.DataFrame:
     data.ta.rsi(length=14, append=True)
     data.ta.obv(append=True)
     
-    # For yfinance, the daily data is already what we're analyzing, so the
-    # multi-timeframe check is implicitly handled.
     is_daily_uptrend = data['SMA_10'].iloc[-1] > data['SMA_50'].iloc[-1]
 
     data['Signal_Score'] = 0
     data.loc[data['SMA_10'] > data['SMA_50'], 'Signal_Score'] += 1
     data.loc[data['MACDh_12_26_9'] > 0, 'Signal_Score'] += 1
-    data.loc[data['RSI_14'] < 60, 'Signal_Score'] += 1 # Adjusted for daily trends
+    data.loc[data['RSI_14'] < 60, 'Signal_Score'] += 1
     data['OBV_SMA_10'] = data['OBV'].rolling(window=10).mean()
     data.loc[data['OBV'] > data['OBV_SMA_10'], 'Signal_Score'] += 1
     if is_daily_uptrend:
