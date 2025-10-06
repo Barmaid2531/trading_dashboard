@@ -9,19 +9,11 @@ from strategies.advanced_analyzer import analyze_stock
 class TrendFollowingStrategy(Strategy):
     ticker = None
     def init(self):
-        df = pd.DataFrame({
-            'Open': self.data.Open, 
-            'High': self.data.High, 
-            'Low': self.data.Low, 
-            'Close': self.data.Close, 
-            'Volume': self.data.Volume
-        })
+        df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
         self.signals = self.I(lambda: analyze_stock(df, self.ticker)['Signal_Score'], name="Signal_Score")
-
     def next(self):
         if self.signals[-1] >= 5: 
-            if not self.position: 
-                self.buy()
+            if not self.position: self.buy()
         elif self.signals[-1] <= 3:
             self.position.close()
 
@@ -33,8 +25,9 @@ class MeanReversionStrategy(Strategy):
         self.rsi = self.I(ta.rsi, close_series, length=14)
 
     def next(self):
-        lower_band = self.bbands["BBL_20_2.0"]
-        middle_band = self.bbands.BBM_20_2.0
+        # --- FIX: Use dictionary-style access for column names with dots ---
+        lower_band = self.bbands['BBL_20_2.0']
+        middle_band = self.bbands['BBM_20_2.0']
         
         if self.data.Close <= lower_band and self.rsi < 35:
             if not self.position: 
