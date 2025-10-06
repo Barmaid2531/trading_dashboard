@@ -33,7 +33,7 @@ class MeanReversionStrategy(Strategy):
         self.rsi = self.I(ta.rsi, close_series, length=14)
 
     def next(self):
-        lower_band = self.bbands.BBL_20_2.0
+        lower_band = self.bbands["BBL_20_2.0"]
         middle_band = self.bbands.BBM_20_2.0
         
         if self.data.Close <= lower_band and self.rsi < 35:
