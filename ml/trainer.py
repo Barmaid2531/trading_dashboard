@@ -1,67 +1,83 @@
-# ml_trainer.py
+# ml/trainer.py
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import xgboost as xgb
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report
 import joblib
+from datetime import datetime
 
-# --- 1. Data Preparation ---
-def prepare_data(ticker, period="10y"):
-    """Downloads data, creates features, and defines the prediction target."""
-    data = yf.Ticker(ticker).history(period=period, interval="1d")
+# A self-contained list of tickers for the trainer
+OMXS30_TICKERS = [
+    'ERIC-B.ST', 'ADDT-B.ST', 'SCA-B.ST', 'AZN.ST', 'BOL.ST', 'SAAB-B.ST', 'NDA-SE.ST', 'SKA-B.ST',
+    'TEL2-B.ST', 'HM-B.ST', 'TELIA.ST', 'NIBE-B.ST', 'LIFCO-B.ST', 'SHB-A.ST', 'SEB-A.ST', 'ESSITY-B.ST',
+    'SWED-A.ST', 'EVO.ST', 'SKF-B.ST', 'INDU-C.ST', 'SAND.ST', 'VOLV-B.ST', 'HEXA-B.ST', 'ABB.ST',
+    'ASSA-B.ST', 'EPI-A.ST', 'INVE-B.ST', 'EQT.ST', 'ALFA.ST', 'ATCO-A.ST'
+]
+
+def prepare_data(tickers, period="10y"):
+    """Downloads data for multiple tickers, creates features, and defines the target."""
+    all_data = []
+    print(f"Downloading historical data for {len(tickers)} tickers...")
+    for ticker in tickers:
+        data = yf.Ticker(ticker).history(period=period, interval="1d")
+        if not data.empty:
+            all_data.append(data)
     
-    # Feature Engineering: Calculate indicators
-    data.ta.strategy("All", sma_fast=10, sma_slow=50, macd_fast=12, macd_slow=26, macd_signal=9, rsi_length=14, obv=True)
+    combined_data = pd.concat(all_data)
     
-    # Target Label Creation: Predict if the price will rise by 3% within the next 5 days
+    print("Calculating features...")
+    # Use pandas_ta to calculate a broad set of indicators
+    combined_data.ta.strategy("All", sma_fast=10, sma_slow=50, macd_fast=12, macd_slow=26, macd_signal=9, rsi_length=14, obv=True)
+    
+    # Define the prediction target: Will the price rise by 3% within the next 5 days?
     future_window = 5
-    future_return_threshold = 0.03 # 3%
+    future_return_threshold = 0.03
     
-    data['Future_Price'] = data['Close'].shift(-future_window)
-    data['Target'] = (data['Future_Price'] > data['Close'] * (1 + future_return_threshold)).astype(int)
+    combined_data['Future_Price'] = combined_data['Close'].shift(-future_window)
+    combined_data['Target'] = (combined_data['Future_Price'] > combined_data['Close'] * (1 + future_return_threshold)).astype(int)
     
     # Clean up data
-    data = data.dropna()
-    data = data.drop(columns=['Dividends', 'Stock Splits', 'Future_Price'])
+    combined_data = combined_data.dropna()
+    combined_data = combined_data.drop(columns=['Dividends', 'Stock Splits', 'Future_Price'])
     
-    return data
+    return combined_data
 
-# --- 2. Model Training ---
 def train_model(data):
-    """Splits data, trains an XGBoost model, and evaluates it."""
-    features = data.drop(columns=['Target'])
+    """Splits data by time, trains an XGBoost model, and evaluates it."""
+    features = data.drop(columns=['Target']).select_dtypes(include=['number'])
     target = data['Target']
     
-    # Ensure all feature columns are numeric
-    features = features.select_dtypes(include=['number'])
+    # Time-based split: Train on data before 2024, test on 2024 onwards
+    # Make sure the index is timezone-aware if the split_date is
+    if features.index.tz is None:
+        features.index = features.index.tz_localize('UTC')
+        
+    split_date = pd.to_datetime("2024-01-01").tz_localize('UTC')
     
-    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
-    
-    print("Training XGBoost model...")
-    model = xgb.XGBClassifier(objective='binary:logistic', eval_metric='logloss', use_label_encoder=False)
+    X_train, X_test = features[features.index < split_date], features[features.index >= split_date]
+    y_train, y_test = target[target.index < split_date], target[target.index >= split_date]
+
+    if X_train.empty or X_test.empty:
+        print("Not enough data to perform a train/test split.")
+        return None
+
+    print(f"Training on {len(X_train)} samples, testing on {len(X_test)} samples.")
+    model = xgb.XGBClassifier(objective='binary:logistic', eval_metric='logloss', use_label_encoder=False, n_estimators=200, max_depth=5)
     model.fit(X_train, y_train)
     
-    # --- 3. Evaluation ---
-    print("\n--- Model Evaluation ---")
+    print("\n--- Model Evaluation on Test Data (2024 onwards) ---")
     preds = model.predict(X_test)
-    print(classification_report(y_test, preds))
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, preds))
+    print(classification_report(y_test, preds, zero_division=0))
     
     return model
 
 if __name__ == '__main__':
-    # Choose a ticker with a long history for training
-    training_ticker = "VOLV-B.ST"
-    print(f"Preparing data for {training_ticker}...")
-    training_data = prepare_data(training_ticker)
+    training_data = prepare_data(OMXS30_TICKERS)
     
     if not training_data.empty:
         trained_model = train_model(training_data)
-        
-        # --- 4. Save the Model ---
-        model_filename = "xgb_model.joblib"
-        joblib.dump(trained_model, model_filename)
-        print(f"\nModel trained and saved as '{model_filename}'")
+        if trained_model:
+            model_filename = "ml/xgb_model.joblib"
+            joblib.dump(trained_model, model_filename)
+            print(f"\nModel trained and saved as '{model_filename}'")
