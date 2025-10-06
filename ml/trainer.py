@@ -1,4 +1,3 @@
-# ml/trainer.py
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
@@ -7,6 +6,7 @@ from sklearn.metrics import classification_report
 import joblib
 from datetime import datetime
 
+# A self-contained list of tickers for the trainer
 OMXS30_TICKERS = [
     'ERIC-B.ST', 'ADDT-B.ST', 'SCA-B.ST', 'AZN.ST', 'BOL.ST', 'SAAB-B.ST', 'NDA-SE.ST', 'SKA-B.ST',
     'TEL2-B.ST', 'HM-B.ST', 'TELIA.ST', 'NIBE-B.ST', 'LIFCO-B.ST', 'SHB-A.ST', 'SEB-A.ST', 'ESSITY-B.ST',
@@ -15,7 +15,7 @@ OMXS30_TICKERS = [
 ]
 
 def prepare_data(tickers, period="10y"):
-    """Downloads data, creates features, and defines the target."""
+    """Downloads data for multiple tickers, creates features, and defines the target."""
     all_data = []
     print(f"Downloading historical data for {len(tickers)} tickers...")
     for ticker in tickers:
@@ -30,12 +30,17 @@ def prepare_data(tickers, period="10y"):
         
     combined_data = pd.concat(all_data)
     
-    # --- FIX: Group by ticker and apply analysis to each group ---
     print("Calculating features for each stock...")
     processed_groups = []
     for ticker, group in combined_data.groupby('Ticker'):
-        # Apply all indicator calculations to this single stock's data
-        group.ta.strategy("All", sma_fast=10, sma_slow=50, macd_fast=12, macd_slow=26, macd_signal=9, rsi_length=14, obv=True)
+        # --- FIX: Apply all indicator calculations individually to this single stock's data ---
+        group.ta.sma(length=10, append=True)
+        group.ta.sma(length=50, append=True)
+        group.ta.macd(fast=12, slow=26, signal=9, append=True)
+        group.ta.rsi(length=14, append=True)
+        group.ta.obv(append=True)
+        group.ta.atr(length=14, append=True)
+        group.ta.bbands(length=20, append=True)
         processed_groups.append(group)
     
     # Recombine into one large DataFrame with all indicators calculated
@@ -88,6 +93,11 @@ if __name__ == '__main__':
     if not training_data.empty:
         trained_model = train_model(training_data)
         if trained_model:
+            # Ensure the ml directory exists
+            import os
+            if not os.path.exists('ml'):
+                os.makedirs('ml')
+            
             model_filename = "ml/xgb_model.joblib"
             joblib.dump(trained_model, model_filename)
             print(f"\nModel trained and saved as '{model_filename}'")
