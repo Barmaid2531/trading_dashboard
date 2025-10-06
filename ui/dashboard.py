@@ -4,11 +4,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import streamlit.components.v1 as components
-import joblib
+import yfinance as yf
 
-from data.fetchers.yfinance_fetcher import fetch_daily_bars
+from data.fetchers.yfinance_fetcher import fetch_daily_bars, get_fx_rate
 from strategies.advanced_analyzer import analyze_stock
 from strategies.backtest import run_backtest
+from strategies.pairs_trading_analyzer import find_cointegrated_pairs, analyze_pair_spread
 
 @st.cache_data
 def get_nordic_indices():
@@ -34,11 +35,7 @@ def plot_stock_chart(strategy_data, ticker_symbol):
 
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
     
-    # Dynamically find Bollinger Band column names for plotting
-    bbu_col = next((col for col in strategy_data.columns if col.startswith('BBU_')), None)
-    bbm_col = next((col for col in strategy_data.columns if col.startswith('BBM_')), None)
-    bbl_col = next((col for col in strategy_data.columns if col.startswith('BBL_')), None)
-
+    bbu_col, bbm_col, bbl_col = next((c for c in strategy_data.columns if c.startswith('BBU_')), None), next((c for c in strategy_data.columns if c.startswith('BBM_')), None), next((c for c in strategy_data.columns if c.startswith('BBL_')), None)
     if all([bbu_col, bbm_col, bbl_col]):
         fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data[bbu_col], name='Upper Band', line=dict(color='gray', dash='dash')), row=1, col=1)
         fig.add_trace(go.Scatter(x=strategy_data.index, y=strategy_data[bbl_col], name='Lower Band', line=dict(color='gray', dash='dash'), fill='tonexty', fillcolor='rgba(128,128,128,0.1)'), row=1, col=1)
@@ -97,7 +94,7 @@ def display_detailed_view(ticker, total_capital, risk_percent):
                 position_size = capital_to_risk / risk_per_share
                 position_value = position_size * last_row['Close']
                 st.metric("Suggested Shares", f"{position_size:.2f}", help=f"Risking {risk_percent}% of ${total_capital:,.2f}")
-                st.metric("Position Value", f"{position_value:,.2f} SEK")
+                st.metric("Position Value", f"{position_value:,.2f}")
             else:
                 st.warning("Cannot calculate position size.")
 
@@ -110,22 +107,26 @@ def display_detailed_view(ticker, total_capital, risk_percent):
     except Exception as e:
         st.error(f"An error occurred while analyzing {ticker}."), st.exception(e)
 
+@st.cache_data
 def calculate_portfolio_summary(portfolio):
-    total_value, total_investment = 0, 0
+    total_value_sek, total_investment_sek = 0, 0
     if not portfolio:
         return 0, 0, 0, 0
     for holding in portfolio:
         try:
+            currency = yf.Ticker(holding["ticker"]).info.get('currency', 'SEK')
             data = fetch_daily_bars(holding["ticker"], period="5d")
             if not data.empty:
                 current_price = data['Close'].iloc[-1]
-                total_investment += holding["quantity"] * holding["gav"]
-                total_value += holding["quantity"] * current_price
+                fx_rate = get_fx_rate(currency, 'SEK')
+                if fx_rate is None: fx_rate = 1.0
+                total_investment_sek += (holding["quantity"] * holding["gav"]) * fx_rate
+                total_value_sek += (holding["quantity"] * current_price) * fx_rate
         except Exception:
             continue
-    total_pl = total_value - total_investment
-    total_pl_pct = (total_pl / total_investment) * 100 if total_investment != 0 else 0
-    return total_value, total_investment, total_pl, total_pl_pct
+    total_pl_sek = total_value_sek - total_investment_sek
+    total_pl_pct = (total_pl_sek / total_investment_sek) * 100 if total_investment_sek != 0 else 0
+    return total_value_sek, total_investment_sek, total_pl_sek, total_pl_pct
 
 def run_app():
     st.set_page_config(page_title="Trading Dashboard", layout="wide")
@@ -137,12 +138,10 @@ def run_app():
     with st.sidebar:
         st.title("💹 Trading Dashboard")
         st.info("Swing trading analysis for Nordic markets.")
-        
         st.write("---")
         st.header("Risk Settings")
         total_capital = st.number_input("Total Trading Capital", min_value=1000, step=1000, value=100000)
         risk_percent = st.slider("Risk per Trade (%)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
-
         st.write("---")
         st.header("My Data")
         uploaded_file = st.file_uploader("Import Data (JSON)", type=['json'])
@@ -160,7 +159,7 @@ def run_app():
 
     st.title("Nordic Market Swing Trading Analysis")
 
-    tabs = st.tabs(["🏠 Dashboard", "📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist", "🧪 Backtester"])
+    tabs = st.tabs(["🏠 Dashboard", "📈 Screener", "🔍 Individual Analysis", "💼 Portfolio", "🔭 Watchlist", "🧪 Backtester", "➗ Pairs Trading"])
 
     with tabs[0]:
         st.header("At-a-Glance Summary")
@@ -173,7 +172,7 @@ def run_app():
             c2.metric("Total P/L %", f"{total_pl_pct:.2f}%")
         with col2:
             st.subheader("Market Snapshot")
-            if 'recommendations' in st.session_state and not st.session_state.recommendations.empty:
+            if 'recommendations' in st.session_state and isinstance(st.session_state.recommendations, pd.DataFrame) and not st.session_state.recommendations.empty:
                 st.metric("Strong Buy Signals Found", len(st.session_state.recommendations))
             else:
                 st.metric("Strong Buy Signals Found", "N/A", help="Run a scan in the 'Screener' tab.")
@@ -246,30 +245,37 @@ def run_app():
                     st.session_state.portfolio.append({"ticker": ticker, "quantity": qty, "gav": gav}); st.success(f"Added {ticker}!")
         
         if st.session_state.portfolio:
-            portfolio_data, total_value, total_investment = [], 0, 0
-            with st.spinner("Updating portfolio..."):
+            portfolio_data, total_value_sek, total_investment_sek = [], 0, 0
+            with st.spinner("Updating portfolio with FX rates..."):
                 for holding in st.session_state.portfolio:
                     try:
+                        info = yf.Ticker(holding["ticker"]).info
+                        currency = info.get('currency', 'SEK')
                         data = fetch_daily_bars(holding["ticker"])
                         if data.empty: continue
                         strategy_data = analyze_stock(data, holding["ticker"])
                         last_row = strategy_data.iloc[-1]
-                        current_price, investment_value = last_row['Close'], holding["quantity"] * holding["gav"]
-                        current_value = holding["quantity"] * current_price
-                        profit_loss, profit_loss_pct = current_value - investment_value, (current_value / investment_value - 1) * 100 if investment_value != 0 else 0
+                        current_price = last_row['Close']
+                        fx_rate = get_fx_rate(currency, 'SEK')
+                        if fx_rate is None: fx_rate = 1.0
+                        
+                        inv_local, val_local = (holding["quantity"] * holding["gav"]), (holding["quantity"] * current_price)
+                        val_sek, inv_sek = val_local * fx_rate, inv_local * fx_rate
+                        pl_sek, pl_pct = val_sek - inv_sek, (val_sek / inv_sek - 1) * 100 if inv_sek != 0 else 0
+
                         portfolio_data.append({
-                            "Ticker": holding["ticker"], "Quantity": holding["quantity"], "GAV": f"{holding['gav']:.2f}",
-                            "Current Price": f"{current_price:.2f}", "Current Value": f"{current_value:.2f}",
-                            "P/L": f"{profit_loss:.2f}", "P/L %": f"{profit_loss_pct:.2f}%", "Suggestion": last_row['Recommendation']
+                            "Ticker": holding["ticker"], "Qty": holding["quantity"], "Currency": currency,
+                            "GAV (Local)": f"{holding['gav']:.2f}", "Price (Local)": f"{current_price:.2f}",
+                            "Value (SEK)": f"{val_sek:,.2f}", "P/L (SEK)": f"{pl_sek:,.2f}",
+                            "P/L %": f"{pl_pct:.2f}%", "Suggestion": last_row['Recommendation']
                         })
-                        total_value, total_investment = total_value + current_value, total_investment + investment_value
+                        total_value_sek, total_investment_sek = total_value_sek + val_sek, total_investment_sek + inv_sek
                     except Exception: continue
             
             if portfolio_data:
-                total_pl = total_value - total_investment
-                total_pl_pct = (total_pl / total_investment) * 100 if total_investment != 0 else 0
+                total_pl_sek, total_pl_pct = total_value_sek - total_investment_sek, (total_value_sek / total_investment_sek - 1) * 100 if total_investment_sek != 0 else 0
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Total Value", f"{total_value:,.2f} SEK"), c2.metric("Total P/L", f"{total_pl:,.2f} SEK"), c3.metric("Total P/L %", f"{total_pl_pct:.2f}%")
+                c1.metric("Total Portfolio Value", f"{total_value_sek:,.2f} SEK"), c2.metric("Total P/L", f"{total_pl_sek:,.2f} SEK"), c3.metric("Total P/L %", f"{total_pl_pct:.2f}%")
                 st.write("---")
                 def style_table(df):
                     def color(val, sugg=False):
@@ -278,7 +284,7 @@ def run_app():
                             num = float(str(val).replace('%',''))
                             return f'color: {"green" if num > 0 else "red" if num < 0 else "white"}'
                         except (ValueError, TypeError): return ''
-                    return df.style.applymap(lambda v: color(v, sugg=True), subset=['Suggestion']).applymap(lambda v: color(v, sugg=False), subset=['P/L', 'P/L %'])
+                    return df.style.format({"P/L %": "{:.2f}%"}).applymap(lambda v: color(v, sugg=True), subset=['Suggestion']).applymap(lambda v: color(v, sugg=False), subset=['P/L (SEK)', 'P/L %'])
                 st.dataframe(style_table(pd.DataFrame(portfolio_data)), use_container_width=True)
 
                 st.write("---")
@@ -291,8 +297,7 @@ def run_app():
                     idx = portfolio_tickers.index(selected_ticker)
                     holding_to_edit = st.session_state.portfolio[idx]
                     c1, c2 = st.columns(2)
-                    new_qty = c1.number_input("New Qty", value=holding_to_edit['quantity'], key=f"qty_{selected_ticker}")
-                    new_gav = c2.number_input("New GAV", value=holding_to_edit['gav'], key=f"gav_{selected_ticker}")
+                    new_qty, new_gav = c1.number_input("New Qty", value=holding_to_edit['quantity'], key=f"qty_{selected_ticker}"), c2.number_input("New GAV", value=holding_to_edit['gav'], key=f"gav_{selected_ticker}")
                     c1, c2 = st.columns([1, 1])
                     if c1.button("Update", key=f"up_{selected_ticker}"):
                         st.session_state.portfolio[idx] = {"ticker": selected_ticker, "quantity": new_qty, "gav": new_gav}; st.success(f"Updated {selected_ticker}!"); st.rerun()
@@ -358,6 +363,36 @@ def run_app():
                             with st.expander("View Full Statistics Table"): st.write(stats)
                         else: st.error("Could not fetch data.")
                     except ValueError as e: st.error(e)
+
+    with tabs[6]:
+        st.header("Pairs Trading Screener")
+        nordic_indices = get_nordic_indices()
+        index_to_scan = st.selectbox("Select an Index to Find Pairs In:", options=list(nordic_indices.keys()), key="pairs_index")
+        if st.button(f"Find Cointegrated Pairs in {index_to_scan}"):
+            with st.spinner("Scanning for pairs... This may take several minutes."):
+                tickers = nordic_indices[index_to_scan]
+                pairs_df = find_cointegrated_pairs(tickers)
+                st.session_state.found_pairs = pairs_df
+        if 'found_pairs' in st.session_state:
+            pairs_df = st.session_state.found_pairs
+            st.metric("Cointegrated Pairs Found", len(pairs_df))
+            if not pairs_df.empty:
+                st.dataframe(pairs_df.sort_values(by='P-Value'), use_container_width=True)
+                st.write("---"), st.subheader("Analyze Pair Spread")
+                selected_pair = st.selectbox("Select a pair to analyze:", options=pairs_df['Pair'].tolist())
+                if selected_pair:
+                    ticker1, ticker2 = selected_pair.split('-')
+                    with st.spinner(f"Analyzing spread for {selected_pair}..."):
+                        analysis_df = analyze_pair_spread(ticker1, ticker2)
+                    if not analysis_df.empty:
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=analysis_df.index, y=analysis_df['Z_Score'], name='Z-Score'))
+                        fig.add_hline(y=2.0, line_dash="dash", line_color="red"), fig.add_hline(y=-2.0, line_dash="dash", line_color="green")
+                        fig.update_layout(title=f"Z-Score of {selected_pair} Price Spread", yaxis_title="Z-Score")
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.info("Strategy: Sell the spread when Z-Score > 2. Buy the spread when Z-Score < -2.")
+            else:
+                st.warning("No cointegrated pairs found in this index with the current criteria.")
 
 if __name__ == "__main__":
     run_app()
