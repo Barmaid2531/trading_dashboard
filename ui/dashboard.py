@@ -264,7 +264,7 @@ def run_app():
             else:
                 st.info(f"No '{selected_strategy}' signals found in this index.")
 
-with tabs[2]:
+    with tabs[2]:
         st.header("💡 ML Suggestion Engine")
         if model is None:
             st.error("ML model file ('ml/xgb_model.joblib') not found. Please run `ml/trainer.py` to generate the model file and upload it to the `ml/` folder in your repository.")
