@@ -24,11 +24,21 @@ def prepare_data(tickers, period="10y"):
         if not data.empty:
             all_data.append(data)
     
+    if not all_data:
+        print("Could not download any data. Exiting.")
+        return pd.DataFrame()
+        
     combined_data = pd.concat(all_data)
     
     print("Calculating features...")
-    # Use pandas_ta to calculate a broad set of indicators
-    combined_data.ta.strategy("All", sma_fast=10, sma_slow=50, macd_fast=12, macd_slow=26, macd_signal=9, rsi_length=14, obv=True)
+    # --- FIX: Calculate indicators individually for robustness ---
+    combined_data.ta.sma(length=10, append=True)
+    combined_data.ta.sma(length=50, append=True)
+    combined_data.ta.macd(fast=12, slow=26, signal=9, append=True)
+    combined_data.ta.rsi(length=14, append=True)
+    combined_data.ta.obv(append=True)
+    combined_data.ta.atr(length=14, append=True)
+    combined_data.ta.bbands(length=20, append=True)
     
     # Define the prediction target: Will the price rise by 3% within the next 5 days?
     future_window = 5
@@ -48,11 +58,8 @@ def train_model(data):
     features = data.drop(columns=['Target']).select_dtypes(include=['number'])
     target = data['Target']
     
-    # Time-based split: Train on data before 2024, test on 2024 onwards
-    # Make sure the index is timezone-aware if the split_date is
     if features.index.tz is None:
         features.index = features.index.tz_localize('UTC')
-        
     split_date = pd.to_datetime("2024-01-01").tz_localize('UTC')
     
     X_train, X_test = features[features.index < split_date], features[features.index >= split_date]
