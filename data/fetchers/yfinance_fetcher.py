@@ -20,15 +20,12 @@ def fetch_daily_bars(ticker, period="2y"):
     else:
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600) # Cache the rate for 1 hour
+@st.cache_data(ttl=3600)
 def get_fx_rate(from_currency, to_currency):
-    """
-    Fetches the latest exchange rate between two currencies.
-    """
+    """Fetches the latest exchange rate between two currencies."""
     if from_currency == to_currency:
         return 1.0
     
-    # yfinance uses symbols like 'DKKSEK=X' for currency pairs
     fx_ticker = f"{from_currency}{to_currency}=X"
     try:
         fx_data = yf.Ticker(fx_ticker).history(period="5d", interval="1d")
