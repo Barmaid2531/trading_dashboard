@@ -424,9 +424,8 @@ def run_app():
                 display_detailed_view(selected_ticker_wl, total_capital, risk_percent, analysis_function)
                 if st.button("Remove from Watchlist"):
                     st.session_state.watchlist.remove(selected_ticker_wl); st.warning(f"Removed {selected_ticker_wl}."); st.rerun()
-
-    with tabs[6]:
-        st.header("🧪 Strategy Backtester")
+    with tabs[6]: # Backtester
+        st.header("Strategy Backtester")
         with st.form("backtest_form"):
             c1, c2, c3 = st.columns(3)
             ticker, start_date, end_date = c1.text_input("Ticker", "AAPL").upper(), c2.date_input("Start Date", pd.to_datetime("2023-01-01")), c3.date_input("End Date", pd.to_datetime("2024-01-01"))
@@ -437,16 +436,25 @@ def run_app():
                         if stats is not None:
                             st.success("Backtest complete!")
                             st.subheader("Key Performance Metrics")
+                            
+                            # --- FIX: Each metric call is now on its own line ---
                             c1, c2, c3, c4 = st.columns(4)
-                            c1.metric("Return [%]", f"{stats['Return [%]']:.2f}%"), c2.metric("Win Rate [%]", f"{stats['Win Rate [%]']:.2f}%"),
-                            c3.metric("Profit Factor", f"{stats['Profit Factor']:.2f}"), c4.metric("Max Drawdown [%]", f"{stats['Max. Drawdown [%]:.2f}%")
+                            c1.metric("Return [%]", f"{stats['Return [%]']:.2f}%")
+                            c2.metric("Win Rate [%]", f"{stats['Win Rate [%]']:.2f}%")
+                            c3.metric("Profit Factor", f"{stats['Profit Factor']:.2f}")
+                            c4.metric("Max Drawdown [%]", f"{stats['Max. Drawdown [%]']:.2f}%")
+
                             st.subheader("Equity Curve & Trades")
-                            if script and div: components.html(script + div, height=800, scrolling=True)
-                            else: st.warning("No plot generated (no trades made).")
-                            with st.expander("View Full Statistics Table"): st.write(stats)
-                        else: st.error("Could not fetch data.")
-                    except ValueError as e: st.error(e)
-    
+                            if script and div: 
+                                components.html(script + div, height=800, scrolling=True)
+                            else: 
+                                st.warning("No plot generated (no trades made).")
+                            with st.expander("View Full Statistics Table"): 
+                                st.write(stats)
+                        else: 
+                            st.error("Could not fetch data.")
+                    except ValueError as e: 
+                        st.error(e)    
     with tabs[7]:
         st.header("➗ Pairs Trading Screener")
         nordic_indices = get_nordic_indices()
