@@ -329,11 +329,64 @@ def run_app():
                         c4.metric(f"Shares for {investment_amount}", f"{shares_to_buy:.2f}")
             else:
                  st.info("Click the button to scan for ML-powered opportunities.")
-    with tabs[3]:
-        st.header("🔍 Deep-Dive on a Single Stock")
-        custom_ticker = st.text_input("Enter Any Ticker", key="custom_ticker").upper()
-        if custom_ticker:
-            display_detailed_view(custom_ticker, total_capital, risk_percent, analysis_function)
+    with tabs[2]:
+        st.header("💡 ML Suggestion Engine")
+        if model is None:
+            st.error("ML model file ('ml/xgb_model.joblib') not found. Please run `ml/trainer.py` to generate the model file.")
+        else:
+            c1, c2 = st.columns(2)
+            investment_amount = c1.number_input("Amount to Invest", 100, step=100, value=1000)
+            nordic_indices = get_nordic_indices()
+            index_to_scan = c2.selectbox("Select Index to Scan:", list(nordic_indices.keys()), key="ml_suggestion_index")
+            confidence_threshold = st.slider("Minimum Confidence (%)", 0, 100, 70)
+    
+            if st.button("Find ML-Powered Opportunities", type="primary"):
+                st.session_state.ml_scan_run = True # Set the flag that a scan has been run
+                tickers = nordic_indices[index_to_scan]
+                ml_buys_list = []
+    
+                with st.spinner(f"Scanning {index_to_scan} with ML model..."):
+                    progress_bar = st.progress(0)
+                    for i, ticker in enumerate(tickers):
+                        progress_bar.progress((i + 1) / len(tickers), f"Scanning {ticker}...")
+                        try:
+                            data = fetch_daily_bars(ticker, period="1y")
+                            if not data.empty and len(data) > 50:
+                                ml_data = analyze_stock_ml(data.copy(), model)
+                                if not ml_data.empty:
+                                    last_row_ml = ml_data.iloc[-1]
+                                    if last_row_ml['ML_Prediction'] == 1 and last_row_ml['ML_Confidence'] * 100 >= confidence_threshold:
+                                        rule_data = analyze_stock(data.copy(), ticker)
+                                        ml_buys_list.append({"Ticker": ticker, "Data": rule_data.iloc[-1], "Confidence": last_row_ml['ML_Confidence']})
+                        except Exception:
+                            continue
+    
+                progress_bar.empty()
+                st.session_state.ml_recommendations = pd.DataFrame(ml_buys_list)
+                st.rerun() # Force a clean rerun to display results correctly
+    
+            # --- NEW DISPLAY LOGIC ---
+            if st.session_state.ml_scan_run:
+                recommendations_df = st.session_state.ml_recommendations
+                st.metric("ML Buy Signals Found", len(recommendations_df))
+    
+                if not recommendations_df.empty:
+                    recommendations_df = recommendations_df.sort_values(by="Confidence", ascending=False)
+                    st.success(f"Displaying the top {len(recommendations_df)} opportunities:")
+                    for _, row in recommendations_df.iterrows():
+                        ticker, last_row, confidence = row['Ticker'], row['Data'], row['Confidence']
+                        with st.container(border=True):
+                            st.subheader(f"{ticker}")
+                            st.metric("Model Confidence", f"{confidence * 100:.2f}%")
+                            st.markdown("**Suggested Trade Plan:**")
+                            shares_to_buy = investment_amount / last_row['Close']
+                            c1, c2, c3, c4 = st.columns(4)
+                            c1.metric("Entry Price", f"{last_row['Close']:.2f}"), c2.metric("Stop-Loss", f"{last_row['Stop_Loss']:.2f}"),
+                            c3.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}"), c4.metric(f"Shares for {investment_amount}", f"{shares_to_buy:.2f}")
+                else:
+                    st.warning("Scan complete. No stocks currently meet the specified criteria.")
+            else:
+                st.info("Click the button to scan for ML-powered opportunities.")
 
     with tabs[4]:
         st.header("💼 My Portfolio Tracker")
