@@ -80,7 +80,11 @@ def display_detailed_view(ticker, total_capital, risk_percent, analysis_function
             st.warning("No data found for this ticker.")
             return
 
-        strategy_data = analysis_function(stock_data, ticker) if "advanced_analyzer" in analysis_function.__module__ else analysis_function(stock_data)
+        # Pass ticker argument only if the function expects it (our Trend-Following one does)
+        if "analyzer" in analysis_function.__module__: # A bit of introspection to check module name
+            strategy_data = analysis_function(stock_data, ticker)
+        else:
+            strategy_data = analysis_function(stock_data)
         
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -155,23 +159,21 @@ def generate_pros_cons(data):
 def run_app():
     st.set_page_config(page_title="Trading Dashboard", layout="wide")
 
-    for key in ['portfolio', 'watchlist', 'screener_view_ticker', 'recommendations', 'found_pairs', 'ml_recommendations']:
+    for key in ['portfolio', 'watchlist', 'screener_view_ticker', 'recommendations', 'found_pairs', 'ml_recommendations', 'ml_scan_run']:
         if key not in st.session_state:
-            st.session_state[key] = [] if ('list' in key or 'portfolio' in key) else None if 'ticker' in key else pd.DataFrame()
+            if key == 'ml_scan_run': st.session_state[key] = False
+            else: st.session_state[key] = [] if ('list' in key or 'portfolio' in key) else None if 'ticker' in key else pd.DataFrame()
 
     with st.sidebar:
         st.title("💹 Trading Dashboard")
         st.info("A comprehensive tool for swing trading analysis.")
-        
         st.write("---")
         st.header("Global Settings")
         selected_strategy = st.selectbox("Select Analysis Strategy", ["Trend-Following", "Mean-Reversion"])
-        
         st.write("---")
         st.header("Risk Settings")
         total_capital = st.number_input("Total Trading Capital", 1000, step=1000, value=100000)
         risk_percent = st.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, 0.5)
-
         st.write("---")
         st.header("My Data")
         uploaded_file = st.file_uploader("Import Data (JSON)", type=['json'])
@@ -210,15 +212,13 @@ def run_app():
         with col2:
             st.subheader("Market Snapshot")
             if not st.session_state.recommendations.empty:
-                st.metric("Strong Buy Signals Found", len(st.session_state.recommendations))
+                st.metric("Signals Found", len(st.session_state.recommendations))
             else:
-                st.metric("Strong Buy Signals Found", "N/A", help="Run a scan in the 'Screener' tab.")
-        
+                st.metric("Signals Found", "N/A", help="Run a scan in the 'Screener' tab.")
         st.write("---")
         st.subheader("Market Context: OMXS30")
         omx_data = fetch_daily_bars("^OMX", period="6mo")
-        if not omx_data.empty:
-            st.line_chart(omx_data['Close'])
+        if not omx_data.empty: st.line_chart(omx_data['Close'])
 
     with tabs[1]:
         st.header("Nordic Index Screener")
@@ -251,7 +251,7 @@ def run_app():
 
             if not st.session_state.recommendations.empty:
                 df = st.session_state.recommendations
-                st.metric("Buy Signals Found", len(df))
+                st.metric(f"'{selected_strategy}' Signals Found", len(df))
                 st.write("---")
                 for _, row in df.iterrows():
                     with st.container(border=True):
@@ -267,71 +267,6 @@ def run_app():
     with tabs[2]:
         st.header("💡 ML Suggestion Engine")
         if model is None:
-            st.error("ML model file ('ml/xgb_model.joblib') not found. Please run `ml/trainer.py` to generate the model file and upload it to the `ml/` folder in your repository.")
-        else:
-            c1, c2 = st.columns(2)
-            investment_amount = c1.number_input("Amount to Invest", 100, step=100, value=1000)
-            nordic_indices = get_nordic_indices()
-            index_to_scan = c2.selectbox("Select Index to Scan:", list(nordic_indices.keys()), key="ml_suggestion_index")
-            confidence_threshold = st.slider("Minimum Confidence (%)", 0, 100, 70)
-
-            if st.button("Find ML-Powered Opportunities", type="primary"):
-                tickers = nordic_indices[index_to_scan]
-                ml_buys_list = []
-                progress_bar = st.progress(0)
-                
-                with st.spinner(f"Scanning {index_to_scan} with ML model..."):
-                    for i, ticker in enumerate(tickers):
-                        progress_bar.progress((i + 1) / len(tickers), f"Scanning {ticker}...")
-                        try:
-                            data = fetch_daily_bars(ticker, period="1y")
-                            if not data.empty and len(data) > 50:
-                                ml_data = analyze_stock_ml(data.copy(), model)
-                                if not ml_data.empty:
-                                    last_row_ml = ml_data.iloc[-1]
-                                    if last_row_ml['ML_Prediction'] == 1 and last_row_ml['ML_Confidence'] * 100 >= confidence_threshold:
-                                        # Also run the rule-based analyzer to get stop-loss info
-                                        rule_data = analyze_stock(data.copy(), ticker)
-                                        ml_buys_list.append({
-                                            "Ticker": ticker, 
-                                            "Data": rule_data.iloc[-1], 
-                                            "Confidence": last_row_ml['ML_Confidence']
-                                        })
-                        except Exception:
-                            continue
-                
-                progress_bar.empty()
-                # --- FIX: Convert the list to a DataFrame ---
-                st.session_state.ml_recommendations = pd.DataFrame(ml_buys_list)
-
-            if not st.session_state.ml_recommendations.empty:
-                recommendations_df = st.session_state.ml_recommendations
-                st.metric("ML Buy Signals Found", len(recommendations_df))
-                
-                # Sort by confidence
-                recommendations_df = recommendations_df.sort_values(by="Confidence", ascending=False)
-                st.success(f"Displaying the top {len(recommendations_df)} opportunities:")
-
-                # --- FIX: Iterate over the DataFrame using .iterrows() ---
-                for _, row in recommendations_df.iterrows():
-                    ticker, last_row, confidence = row['Ticker'], row['Data'], row['Confidence']
-                    with st.container(border=True):
-                        st.subheader(f"{ticker}")
-                        st.metric("Model Confidence", f"{confidence * 100:.2f}%")
-                        
-                        st.markdown("**Suggested Trade Plan:**")
-                        shares_to_buy = investment_amount / last_row['Close']
-                        
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Entry Price", f"{last_row['Close']:.2f}")
-                        c2.metric("Stop-Loss", f"{last_row['Stop_Loss']:.2f}")
-                        c3.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}")
-                        c4.metric(f"Shares for {investment_amount}", f"{shares_to_buy:.2f}")
-            else:
-                 st.info("Click the button to scan for ML-powered opportunities.")
-    with tabs[2]:
-        st.header("💡 ML Suggestion Engine")
-        if model is None:
             st.error("ML model file ('ml/xgb_model.joblib') not found. Please run `ml/trainer.py` to generate the model file.")
         else:
             c1, c2 = st.columns(2)
@@ -339,12 +274,11 @@ def run_app():
             nordic_indices = get_nordic_indices()
             index_to_scan = c2.selectbox("Select Index to Scan:", list(nordic_indices.keys()), key="ml_suggestion_index")
             confidence_threshold = st.slider("Minimum Confidence (%)", 0, 100, 70)
-    
+
             if st.button("Find ML-Powered Opportunities", type="primary"):
-                st.session_state.ml_scan_run = True # Set the flag that a scan has been run
+                st.session_state.ml_scan_run = True
                 tickers = nordic_indices[index_to_scan]
                 ml_buys_list = []
-    
                 with st.spinner(f"Scanning {index_to_scan} with ML model..."):
                     progress_bar = st.progress(0)
                     for i, ticker in enumerate(tickers):
@@ -358,41 +292,41 @@ def run_app():
                                     if last_row_ml['ML_Prediction'] == 1 and last_row_ml['ML_Confidence'] * 100 >= confidence_threshold:
                                         rule_data = analyze_stock(data.copy(), ticker)
                                         ml_buys_list.append({"Ticker": ticker, "Data": rule_data.iloc[-1], "Confidence": last_row_ml['ML_Confidence']})
-                        except Exception:
-                            continue
-    
+                        except Exception: continue
                 progress_bar.empty()
                 st.session_state.ml_recommendations = pd.DataFrame(ml_buys_list)
-                st.rerun() # Force a clean rerun to display results correctly
-    
-            # --- NEW DISPLAY LOGIC ---
+                st.rerun()
+
             if st.session_state.ml_scan_run:
                 recommendations_df = st.session_state.ml_recommendations
                 st.metric("ML Buy Signals Found", len(recommendations_df))
-    
                 if not recommendations_df.empty:
                     recommendations_df = recommendations_df.sort_values(by="Confidence", ascending=False)
                     st.success(f"Displaying the top {len(recommendations_df)} opportunities:")
                     for _, row in recommendations_df.iterrows():
                         ticker, last_row, confidence = row['Ticker'], row['Data'], row['Confidence']
                         with st.container(border=True):
-                            st.subheader(f"{ticker}")
-                            st.metric("Model Confidence", f"{confidence * 100:.2f}%")
-                            st.markdown("**Suggested Trade Plan:**")
-                            shares_to_buy = investment_amount / last_row['Close']
+                            st.subheader(f"{ticker}"), st.metric("Model Confidence", f"{confidence * 100:.2f}%")
+                            shares = investment_amount / last_row['Close']
                             c1, c2, c3, c4 = st.columns(4)
                             c1.metric("Entry Price", f"{last_row['Close']:.2f}"), c2.metric("Stop-Loss", f"{last_row['Stop_Loss']:.2f}"),
-                            c3.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}"), c4.metric(f"Shares for {investment_amount}", f"{shares_to_buy:.2f}")
+                            c3.metric("Take-Profit", f"{last_row['Take_Profit']:.2f}"), c4.metric(f"Shares for {investment_amount}", f"{shares:.2f}")
                 else:
                     st.warning("Scan complete. No stocks currently meet the specified criteria.")
             else:
                 st.info("Click the button to scan for ML-powered opportunities.")
 
+    with tabs[3]:
+        st.header("🔍 Deep-Dive on a Single Stock")
+        custom_ticker = st.text_input("Enter Any Ticker", key="custom_ticker").upper()
+        if custom_ticker:
+            display_detailed_view(custom_ticker, total_capital, risk_percent, analysis_function)
+
     with tabs[4]:
         st.header("💼 My Portfolio Tracker")
         with st.form("add_holding_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
-            ticker, qty, gav = c1.text_input("Ticker").upper(), c2.number_input("Quantity", 0.01, format="%.2f"), c3.number_input("GAV", 0.01, format="%.2f")
+            ticker, qty, gav = c1.text_input("Ticker").upper(), c2.number_input("Quantity", 0.01, format="%.2f"), c3.number_input("GAV (Local)", 0.01, format="%.2f")
             if st.form_submit_button("Add to Portfolio"):
                 if ticker and qty > 0 and gav > 0:
                     st.session_state.portfolio.append({"ticker": ticker, "quantity": qty, "gav": gav}); st.success(f"Added {ticker}!")
@@ -408,14 +342,12 @@ def run_app():
                         if data.empty: continue
                         strategy_data = analysis_function(data, holding["ticker"]) if selected_strategy == "Trend-Following" else analysis_function(data)
                         last_row = strategy_data.iloc[-1]
-                        current_price = last_row['Close']
+                        current_price, inv_local = last_row['Close'], holding["quantity"] * holding["gav"]
+                        val_local = holding["quantity"] * current_price
                         fx_rate = get_fx_rate(currency, 'SEK')
                         if fx_rate is None: fx_rate = 1.0
-                        
-                        inv_local, val_local = (holding["quantity"] * holding["gav"]), (holding["quantity"] * current_price)
                         val_sek, inv_sek = val_local * fx_rate, inv_local * fx_rate
                         pl_sek, pl_pct = val_sek - inv_sek, (val_sek / inv_sek - 1) * 100 if inv_sek != 0 else 0
-
                         portfolio_data.append({
                             "Ticker": holding["ticker"], "Qty": holding["quantity"], "Currency": currency,
                             "GAV (Local)": f"{holding['gav']:.2f}", "Price (Local)": f"{current_price:.2f}",
@@ -507,7 +439,7 @@ def run_app():
                             st.subheader("Key Performance Metrics")
                             c1, c2, c3, c4 = st.columns(4)
                             c1.metric("Return [%]", f"{stats['Return [%]']:.2f}%"), c2.metric("Win Rate [%]", f"{stats['Win Rate [%]']:.2f}%"),
-                            c3.metric("Profit Factor", f"{stats['Profit Factor']:.2f}"), c4.metric("Max Drawdown [%]", f"{stats['Max. Drawdown [%]']:.2f}%")
+                            c3.metric("Profit Factor", f"{stats['Profit Factor']:.2f}"), c4.metric("Max Drawdown [%]", f"{stats['Max. Drawdown [%]:.2f}%")
                             st.subheader("Equity Curve & Trades")
                             if script and div: components.html(script + div, height=800, scrolling=True)
                             else: st.warning("No plot generated (no trades made).")
